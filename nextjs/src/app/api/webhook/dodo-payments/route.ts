@@ -394,7 +394,7 @@ async function handleDispute(
 
 // --- Webhook Handler ---
 export const POST = Webhooks({
- webhookKey: process.env.DODO_PAYMENTS_WEBHOOK_KEY!,
+ webhookKey: process.env.DODO_WEBHOOK_SECRET!,
   
   onPayload: async (payload: unknown) => {
     const webhookPayload = payload as MyWebhookPayload
