@@ -1,68 +1,68 @@
-"use client";
-import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { XCircle, ArrowLeft, RefreshCw } from 'lucide-react';
-import Link from 'next/link';
+'use client';
 
-export default function PaymentCancelPage() {
+import React, { Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { ArrowLeft, XCircle } from 'lucide-react';
+
+// Wrap the component that uses useSearchParams in Suspense
+function CancelContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const [cancelDetails, setCancelDetails] = useState<{
-    tier: string | null;
-  }>({
-    tier: null
-  });
-
-  useEffect(() => {
-    const tier = searchParams.get('tier');
-    
-    setCancelDetails({
-      tier
-    });
-  }, [searchParams]);
+  const tier = searchParams.get('tier') || 'your plan';
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-red-50 to-white flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
-        <XCircle className="h-20 w-20 text-red-500 mx-auto mb-6" />
-        
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">
-          Payment Cancelled
-        </h1>
-        
-        {cancelDetails.tier && (
-          <p className="text-lg text-gray-700 mb-2">
-            Subscription to <strong>{cancelDetails.tier}</strong> plan was cancelled.
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
+      <Card className="w-full max-w-md border-2 border-red-200 dark:border-red-800">
+        <CardHeader className="text-center">
+          <div className="flex justify-center mb-4">
+            <XCircle className="h-16 w-16 text-red-500" />
+          </div>
+          <CardTitle className="text-2xl font-bold text-red-600 dark:text-red-400">
+            Payment Cancelled
+          </CardTitle>
+          <CardDescription className="text-gray-600 dark:text-gray-300 mt-2">
+            Your payment for {tier} was cancelled. No charges were made.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
+            You can try again anytime or contact support if you need help.
           </p>
-        )}
-        
-        <p className="text-gray-600 mb-8">
-          No charges have been made. You can try again anytime.
-        </p>
+          <div className="flex flex-col gap-3">
+            <Button
+              onClick={() => router.push('/')}
+              className="w-full"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Home
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => router.push('/#pricing')}
+              className="w-full"
+            >
+              View Plans
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-          <p className="text-yellow-800 text-sm">
-            <strong>Need help?</strong> Contact our support team if you encountered any issues.
-          </p>
-        </div>
-        
-        <div className="space-y-4">
-          <button
-            onClick={() => window.history.back()}
-            className="w-full bg-gray-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Try Again
-          </button>
-          
-          <Link
-            href="/"
-            className="w-full border border-gray-300 text-gray-700 py-3 px-6 rounded-lg font-semibold hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Home
-          </Link>
+export default function CancelPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-300">Loading...</p>
         </div>
       </div>
-    </div>
+    }>
+      <CancelContent />
+    </Suspense>
   );
 }
