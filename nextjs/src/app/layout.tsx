@@ -6,7 +6,6 @@ import CookieConsent from "@/components/Cookies";
 import { GlobalProvider } from '@/lib/context/GlobalContext';
 import { ThemeProvider } from 'next-themes';
 
-// Optimizovani fontovi sa next/font
 const inter = Inter({
   subsets: ['latin'],
   display: 'swap',
@@ -21,19 +20,14 @@ const jetbrainsMono = JetBrains_Mono({
   preload: false,
 });
 
-// Konstante
 const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCTNAME || "Your SaaS";
 const HOMEPAGE_TITLE = `${PRODUCT_NAME} - Bootstrap Your SaaS in 5 Minutes`;
 const HOMEPAGE_DESCRIPTION = "Launch your SaaS product in days, not months. Complete with authentication, payment processing, and enterprise-grade security built right in.";
 const THEME = process.env.NEXT_PUBLIC_THEME || "theme-sass3";
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://yoursaas.com";
 
-// Optimizovani metadata
 export const metadata: Metadata = {
-  title: {
-    default: HOMEPAGE_TITLE,
-    template: `%s | ${PRODUCT_NAME}`
-  },
+  title: { default: HOMEPAGE_TITLE, template: `%s | ${PRODUCT_NAME}` },
   description: HOMEPAGE_DESCRIPTION,
   metadataBase: new URL(BASE_URL),
   openGraph: {
@@ -51,11 +45,7 @@ export const metadata: Metadata = {
     description: HOMEPAGE_DESCRIPTION,
     images: ['/og-image.jpg'],
   },
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: { index: true, follow: true }
-  },
+  robots: { index: true, follow: true, googleBot: { index: true, follow: true } },
   alternates: { canonical: BASE_URL },
   category: 'technology',
   manifest: '/manifest.json',
@@ -71,7 +61,6 @@ export const viewport: Viewport = {
   colorScheme: 'light dark',
 };
 
-// Structured data za homepage
 const structuredData = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
@@ -86,17 +75,11 @@ const structuredData = {
   offers: { '@type': 'AggregateOffer', lowPrice: '0', highPrice: '199', priceCurrency: 'USD', offerCount: '3' }
 };
 
-interface RootLayoutProps {
-  children: React.ReactNode;
-}
+interface RootLayoutProps { children: React.ReactNode; }
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html 
-      lang="en" 
-      className={`${inter.variable} ${jetbrainsMono.variable} ${THEME}`}
-      suppressHydrationWarning
-    >
+    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} ${THEME}`} suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
