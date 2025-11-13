@@ -1,0 +1,150 @@
+-- Drop existing tables if they exist and recreate with auth_user_id
+DROP TABLE IF EXISTS disputes CASCADE;
+DROP TABLE IF EXISTS refunds CASCADE;
+DROP TABLE IF EXISTS transactions CASCADE;
+DROP TABLE IF EXISTS subscriptions CASCADE;
+DROP TABLE IF EXISTS products CASCADE;
+DROP TABLE IF EXISTS customers CASCADE;
+
+-- Create customers table with auth_user_id
+CREATE TABLE customers (
+    customer_id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    name TEXT,
+    auth_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Create products table
+CREATE TABLE products (
+    product_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Create subscriptions table
+CREATE TABLE subscriptions (
+    subscription_id TEXT PRIMARY KEY,
+    customer_id TEXT NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
+    product_id TEXT REFERENCES products(product_id) ON DELETE SET NULL,
+    subscription_status TEXT NOT NULL,
+    quantity INTEGER DEFAULT 1,
+    currency TEXT,
+    start_date TIMESTAMPTZ NOT NULL,
+    next_billing_date TIMESTAMPTZ,
+    trial_end_date TIMESTAMPTZ,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Create transactions table
+CREATE TABLE transactions (
+    transaction_id TEXT PRIMARY KEY,
+    subscription_id TEXT REFERENCES subscriptions(subscription_id) ON DELETE SET NULL,
+    customer_id TEXT NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
+    status TEXT NOT NULL,
+    amount BIGINT NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'USD',
+    payment_method TEXT,
+    card_last_four TEXT,
+    card_network TEXT,
+    card_type TEXT,
+    billed_at TIMESTAMPTZ NOT NULL,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Create refunds table
+CREATE TABLE refunds (
+    refund_id TEXT PRIMARY KEY,
+    transaction_id TEXT NOT NULL REFERENCES transactions(transaction_id) ON DELETE CASCADE,
+    customer_id TEXT NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
+    amount BIGINT NOT NULL,
+    currency TEXT,
+    is_partial BOOLEAN DEFAULT FALSE,
+    reason TEXT,
+    status TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Create disputes table
+CREATE TABLE disputes (
+    dispute_id TEXT PRIMARY KEY,
+    transaction_id TEXT NOT NULL REFERENCES transactions(transaction_id) ON DELETE CASCADE,
+    amount BIGINT,
+    currency TEXT,
+    dispute_stage TEXT,
+    dispute_status TEXT,
+    remarks TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Create indexes for better performance
+CREATE INDEX idx_customers_email ON customers(email);
+CREATE INDEX idx_customers_auth_user_id ON customers(auth_user_id);
+CREATE INDEX idx_subscriptions_customer_id ON subscriptions(customer_id);
+CREATE INDEX idx_subscriptions_status ON subscriptions(subscription_status);
+CREATE INDEX idx_subscriptions_product_id ON subscriptions(product_id);
+CREATE INDEX idx_transactions_customer_id ON transactions(customer_id);
+CREATE INDEX idx_transactions_subscription_id ON transactions(subscription_id);
+CREATE INDEX idx_transactions_billed_at ON transactions(billed_at);
+CREATE INDEX idx_transactions_status ON transactions(status);
+CREATE INDEX idx_refunds_transaction_id ON refunds(transaction_id);
+CREATE INDEX idx_refunds_customer_id ON refunds(customer_id);
+CREATE INDEX idx_disputes_transaction_id ON disputes(transaction_id);
+
+-- Enable Row Level Security (optional - disable if you want admin-only access)
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE refunds ENABLE ROW LEVEL SECURITY;
+ALTER TABLE disputes ENABLE ROW LEVEL SECURITY;
+
+-- Create policies for RLS (adjust based on your auth needs)
+-- Allow service role (admin) to do everything
+CREATE POLICY "Allow all for service role on customers" ON customers FOR ALL USING (true);
+CREATE POLICY "Allow all for service role on products" ON products FOR ALL USING (true);
+CREATE POLICY "Allow all for service role on subscriptions" ON subscriptions FOR ALL USING (true);
+CREATE POLICY "Allow all for service role on transactions" ON transactions FOR ALL USING (true);
+CREATE POLICY "Allow all for service role on refunds" ON refunds FOR ALL USING (true);
+CREATE POLICY "Allow all for service role on disputes" ON disputes FOR ALL USING (true);
+
+-- Optional: Policies for authenticated users to see their own data
+CREATE POLICY "Users can view own customer data" ON customers FOR SELECT 
+    USING (auth.uid() = auth_user_id);
+
+CREATE POLICY "Users can view own subscriptions" ON subscriptions FOR SELECT 
+    USING (customer_id IN (SELECT customer_id FROM customers WHERE auth_user_id = auth.uid()));
+
+CREATE POLICY "Users can view own transactions" ON transactions FOR SELECT 
+    USING (customer_id IN (SELECT customer_id FROM customers WHERE auth_user_id = auth.uid()));
+
+CREATE POLICY "Users can view own refunds" ON refunds FOR SELECT 
+    USING (customer_id IN (SELECT customer_id FROM customers WHERE auth_user_id = auth.uid()));
+
+-- Create updated_at triggers
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_customers_updated_at BEFORE UPDATE ON customers
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_products_updated_at BEFORE UPDATE ON products
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_subscriptions_updated_at BEFORE UPDATE ON subscriptions
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_transactions_updated_at BEFORE UPDATE ON transactions
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
