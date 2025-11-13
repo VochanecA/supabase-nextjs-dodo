@@ -6,6 +6,8 @@ import { Analytics } from '@vercel/analytics/next';
 import CookieConsent from "@/components/Cookies";
 import { GoogleAnalytics } from '@next/third-parties/google';
 import { GlobalProvider } from '@/lib/context/GlobalContext';
+import { ThemeProvider } from 'next-themes';
+
 
 // Optimizovani fontovi sa next/font
 const inter = Inter({
@@ -119,7 +121,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   themeColor: '#4f46e5',
-  colorScheme: 'light',
+  colorScheme: 'light dark',
 };
 
 // Structured data za homepage
@@ -193,16 +195,19 @@ export default function RootLayout({ children }: RootLayoutProps) {
         <meta name="apple-mobile-web-app-title" content={PRODUCT_NAME} />
         
         {/* Dodatne meta tagove za bolji SEO */}
-        <meta name="theme-color" content="#4f46e5" />
+        <meta name="theme-color" content="#4f46e5" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#1f2937" media="(prefers-color-scheme: dark)" />
         <meta name="msapplication-TileColor" content="#4f46e5" />
       </head>
-      <body className={`font-sans antialiased bg-white text-gray-900 min-h-screen`}>
-        <GlobalProvider>
-          {children}
-          <Analytics />
-          <CookieConsent />
-          {GA_ID && <GoogleAnalytics gaId={GA_ID} />}
-        </GlobalProvider>
+ <body className="font-sans antialiased min-h-screen">
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          <GlobalProvider>
+            {children}
+            <Analytics />
+            <CookieConsent />
+            {GA_ID && <GoogleAnalytics gaId={GA_ID} />}
+          </GlobalProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

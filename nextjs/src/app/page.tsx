@@ -12,7 +12,9 @@ import {
   Database, 
   Clock,
   Menu,
-  X 
+  X,
+  Sun,
+  Moon
 } from 'lucide-react';
 import AuthAwareButtons from '@/components/AuthAwareButtons';
 import HomePricing from "@/components/HomePricing";
@@ -66,8 +68,30 @@ const stats = [
   { label: 'Uptime', value: '99.9%' }
 ];
 
-// Mobile Menu Component
+// Mobile Menu Component sa ikonicama
 const MobileMenu = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
+  const [isDark, setIsDark] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    setIsDark(theme === 'dark');
+  }, []);
+
+  const toggleTheme = () => {
+    const newTheme = !isDark;
+    setIsDark(newTheme);
+    
+    if (newTheme) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -80,73 +104,119 @@ const MobileMenu = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
     };
   }, [isOpen]);
 
+  // Menu items sa ikonicama
+  const menuItems = [
+    {
+      href: "#features",
+      label: "Features",
+      icon: Shield,
+      iconColor: "text-green-600"
+    },
+    {
+      href: "#pricing",
+      label: "Pricing",
+      icon: Database,
+      iconColor: "text-blue-600"
+    },
+    {
+      href: "https://github.com/Razikus/supabase-nextjs-template",
+      label: "Documentation",
+      icon: Globe,
+      iconColor: "text-purple-600",
+      external: true
+    }
+  ];
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 md:hidden">
       {/* Backdrop */}
       <div 
-        className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/20 backdrop-blur-sm dark:bg-black/40"
         onClick={onClose}
       />
       
       {/* Menu Panel */}
-      <div className="absolute right-0 top-0 h-full w-80 max-w-[85vw] bg-white shadow-xl border-l border-gray-200 transform transition-transform duration-300 ease-in-out">
+      <div className="absolute right-0 top-0 h-full w-80 max-w-[85vw] bg-white dark:bg-gray-900 shadow-xl border-l border-gray-200 dark:border-gray-800 transform transition-transform duration-300 ease-in-out">
         <div className="flex flex-col h-full">
-          {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-100">
-            <span className="text-xl font-bold bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent">
+          {/* Header sa theme toggle */}
+          <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-800">
+            <span className="text-xl font-bold bg-gradient-to-r from-primary-600 to-primary-500 dark:from-primary-400 dark:to-primary-300 bg-clip-text text-transparent">
               Menu
             </span>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-              aria-label="Close menu"
-            >
-              <X className="h-6 w-6" />
-            </button>
+            <div className="flex items-center space-x-2">
+              {/* Theme Toggle u mobile menu header */}
+              {mounted && (
+                <button
+                  onClick={toggleTheme}
+                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+                >
+                  {isDark ? (
+                    <Sun className="h-5 w-5 text-yellow-500" />
+                  ) : (
+                    <Moon className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                  )}
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                aria-label="Close menu"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
           </div>
 
-          {/* Navigation Links */}
+          {/* Navigation Links sa ikonicama */}
           <nav className="flex-1 p-6">
-            <div className="space-y-6">
-              <Link
-                href="#features"
-                className="block text-lg font-medium text-gray-900 hover:text-primary-600 transition-colors py-2"
-                onClick={onClose}
-              >
-                Features
-              </Link>
-              <Link
-                href="#pricing"
-                className="block text-lg font-medium text-gray-900 hover:text-primary-600 transition-colors py-2"
-                onClick={onClose}
-              >
-                Pricing
-              </Link>
-              <Link
-                href="https://github.com/Razikus/supabase-nextjs-template"
-                className="block text-lg font-medium text-gray-900 hover:text-primary-600 transition-colors py-2"
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={onClose}
-              >
-                Documentation
-              </Link>
-              <Link
-                href="https://github.com/Razikus/supabase-nextjs-template"
-                className="block text-lg font-medium text-gray-900 hover:text-primary-600 transition-colors py-2"
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={onClose}
-              >
-                Grab This Template
-              </Link>
+            <div className="space-y-4">
+              {menuItems.map((item, index) => {
+                const IconComponent = item.icon;
+                const linkContent = (
+                  <div className="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors group">
+                    <div className={`p-2 rounded-lg bg-gray-100 dark:bg-gray-800 group-hover:bg-white dark:group-hover:bg-gray-700 transition-colors ${item.iconColor}`}>
+                      <IconComponent className="h-5 w-5" />
+                    </div>
+                    <span className="text-lg font-medium text-gray-900 dark:text-gray-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                      {item.label}
+                    </span>
+                  </div>
+                );
+
+                if (item.external) {
+                  return (
+                    <a
+                      key={index}
+                      href={item.href}
+                      className="block"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={onClose}
+                    >
+                      {linkContent}
+                    </a>
+                  );
+                }
+
+                return (
+                  <Link
+                    key={index}
+                    href={item.href}
+                    className="block"
+                    onClick={onClose}
+                  >
+                    {linkContent}
+                  </Link>
+                );
+              })}
             </div>
           </nav>
 
           {/* Auth Buttons */}
-          <div className="p-6 border-t border-gray-100">
+          <div className="p-6 border-t border-gray-100 dark:border-gray-800">
             <AuthAwareButtons variant="mobile" />
           </div>
         </div>
@@ -167,14 +237,14 @@ const PrefetchLinks = () => (
 
 // Hero Section kao zasebna komponenta za bolju performance
 const HeroSection = () => (
-  <section className="relative pt-28 pb-20 md:pt-32 md:pb-24 overflow-hidden">
+  <section className="relative pt-28 pb-20 md:pt-32 md:pb-24 overflow-hidden bg-white dark:bg-gray-900">
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div className="text-center">
-        <h1 className="text-3xl xs:text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight">
+        <h1 className="text-3xl xs:text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-gray-900 dark:text-white">
           Bootstrap Your SaaS
-          <span className="block text-primary-600 mt-2">In 5 minutes</span>
+          <span className="block text-primary-600 dark:text-primary-400 mt-2">In 5 minutes</span>
         </h1>
-        <p className="mt-4 text-base sm:text-lg md:text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
+        <p className="mt-4 text-base sm:text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto leading-relaxed">
           Launch your SaaS product in days, not months. Complete with authentication and enterprise-grade security built right in.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
@@ -187,15 +257,15 @@ const HeroSection = () => (
 
 // Stats Section
 const StatsSection = () => (
-  <section className="py-12 md:py-16 bg-gradient-to-b from-white to-gray-50">
+  <section className="py-12 md:py-16 bg-gradient-to-b from-white to-gray-50 dark:from-gray-900 dark:to-gray-800">
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div className="grid grid-cols-2 gap-4 sm:gap-6 md:grid-cols-4 md:gap-8">
         {stats.map((stat, index) => (
           <div key={index} className="text-center p-4">
-            <div className="text-2xl xs:text-3xl sm:text-4xl font-bold text-primary-600">
+            <div className="text-2xl xs:text-3xl sm:text-4xl font-bold text-primary-600 dark:text-primary-400">
               {stat.value}
             </div>
-            <div className="mt-1 xs:mt-2 text-xs xs:text-sm text-gray-600 font-medium">
+            <div className="mt-1 xs:mt-2 text-xs xs:text-sm text-gray-600 dark:text-gray-400 font-medium">
               {stat.label}
             </div>
           </div>
@@ -207,13 +277,13 @@ const StatsSection = () => (
 
 // Features Section
 const FeaturesSection = () => (
-  <section id="features" className="py-16 md:py-20 bg-gray-50">
+  <section id="features" className="py-16 md:py-20 bg-gray-50 dark:bg-gray-800">
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div className="text-center mb-12 md:mb-16">
-        <h2 className="text-2xl md:text-3xl font-bold text-gray-900">
+        <h2 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">
           Everything You Need
         </h2>
-        <p className="mt-3 md:mt-4 text-base md:text-lg text-gray-600 max-w-2xl mx-auto">
+        <p className="mt-3 md:mt-4 text-base md:text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
           Built with modern technologies for reliability and speed
         </p>
       </div>
@@ -223,13 +293,13 @@ const FeaturesSection = () => (
           return (
             <div
               key={index}
-              className="bg-white p-5 sm:p-6 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 border border-gray-100"
+              className="bg-white dark:bg-gray-900 p-5 sm:p-6 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 border border-gray-100 dark:border-gray-700"
             >
               <IconComponent className={`h-7 w-7 sm:h-8 sm:w-8 ${feature.color}`} />
-              <h3 className="mt-3 sm:mt-4 text-lg sm:text-xl font-semibold text-gray-900">
+              <h3 className="mt-3 sm:mt-4 text-lg sm:text-xl font-semibold text-gray-900 dark:text-white">
                 {feature.title}
               </h3>
-              <p className="mt-2 text-sm sm:text-base text-gray-600 leading-relaxed">
+              <p className="mt-2 text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
                 {feature.description}
               </p>
             </div>
@@ -242,12 +312,12 @@ const FeaturesSection = () => (
 
 // CTA Section
 const CTASection = () => (
-  <section className="py-16 md:py-20 bg-primary-600">
+  <section className="py-16 md:py-20 dark:bg-slate-500 bg-primary-200 dark:bg-primary-200">
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-      <h2 className="text-2xl md:text-3xl font-bold text-white">
+      <h2 className="text-2xl md:text-3xl  font-bold text-slate-800">
         Ready to Transform Your Idea into Reality?
       </h2>
-      <p className="mt-3 md:mt-4 text-base md:text-lg text-primary-100 max-w-2xl mx-auto">
+      <p className="mt-3 md:mt-4 text-base text-black dark:text-orange-400 md:text-lg  max-w-2xl mx-auto">
         Join thousands of developers building their SaaS with {productName}
       </p>
       <Link
@@ -264,31 +334,31 @@ const CTASection = () => (
 
 // Footer Component
 const Footer = () => (
-  <footer className="bg-gray-50 border-t border-gray-200">
+  <footer className="bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
     <div className="max-w-7xl mx-auto py-8 md:py-12 px-4 sm:px-6 lg:px-8">
       <div className="grid grid-cols-1 xs:grid-cols-2 gap-6 md:grid-cols-4 md:gap-8">
         <div className="xs:col-span-2 md:col-span-1">
-          <h4 className="text-sm font-semibold text-gray-900">Product</h4>
+          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Product</h4>
           <ul className="mt-3 space-y-2">
             <li>
-              <Link href="#features" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">
+              <Link href="#features" className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors text-sm">
                 Features
               </Link>
             </li>
             <li>
-              <Link href="#pricing" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">
+              <Link href="#pricing" className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors text-sm">
                 Pricing
               </Link>
             </li>
           </ul>
         </div>
         <div className="xs:col-span-2 md:col-span-1">
-          <h4 className="text-sm font-semibold text-gray-900">Resources</h4>
+          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Resources</h4>
           <ul className="mt-3 space-y-2">
             <li>
               <Link 
                 href="https://github.com/Razikus/supabase-nextjs-template" 
-                className="text-gray-600 hover:text-gray-900 transition-colors text-sm"
+                className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors text-sm"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -298,23 +368,23 @@ const Footer = () => (
           </ul>
         </div>
         <div className="xs:col-span-2 md:col-span-1">
-          <h4 className="text-sm font-semibold text-gray-900">Legal</h4>
+          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Legal</h4>
           <ul className="mt-3 space-y-2">
             <li>
-              <Link href="/legal/privacy" prefetch className="text-gray-600 hover:text-gray-900 transition-colors text-sm">
+              <Link href="/legal/privacy" prefetch className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors text-sm">
                 Privacy
               </Link>
             </li>
             <li>
-              <Link href="/legal/terms" prefetch className="text-gray-600 hover:text-gray-900 transition-colors text-sm">
+              <Link href="/legal/terms" prefetch className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors text-sm">
                 Terms
               </Link>
             </li>
           </ul>
         </div>
       </div>
-      <div className="mt-6 md:mt-8 pt-6 md:pt-8 border-t border-gray-200">
-        <p className="text-center text-gray-600 text-sm">
+      <div className="mt-6 md:mt-8 pt-6 md:pt-8 border-t border-gray-200 dark:border-gray-700">
+        <p className="text-center text-gray-600 dark:text-gray-400 text-sm">
           © {new Date().getFullYear()} {productName}. All rights reserved.
         </p>
       </div>
@@ -325,53 +395,101 @@ const Footer = () => (
 // Navigation Component
 const Navigation = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isDark, setIsDark] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    // Provjeri trenutni theme
+    const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    setIsDark(theme === 'dark');
+  }, []);
+
+  const toggleTheme = () => {
+    const newTheme = !isDark;
+    setIsDark(newTheme);
+    
+    if (newTheme) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  };
 
   return (
     <>
-      <nav className="fixed top-0 w-full bg-white/80 backdrop-blur-sm z-40 border-b border-gray-100 supports-backdrop-blur:bg-white/60">
+      <nav className="fixed top-0 w-full bg-white/80 backdrop-blur-sm z-40 border-b border-gray-100 supports-backdrop-blur:bg-white/60 dark:bg-gray-900/80 dark:border-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-14 sm:h-16 items-center">
             <div className="flex-shrink-0">
-              <span className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent">
+              <span className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent dark:from-primary-400 dark:to-primary-300">
                 {productName}
               </span>
             </div>
             
             {/* Desktop Navigation */}
-            <div className="hidden md:flex items-center space-x-6 lg:space-x-8">
-              <Link href="#features" className="text-gray-600 hover:text-gray-900 transition-colors font-medium text-sm lg:text-base">
+            <div className="hidden md:flex items-center space-x-4 lg:space-x-6">
+              <Link href="#features" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors font-medium text-sm lg:text-base">
                 Features
               </Link>
-              <Link href="#pricing" className="text-gray-600 hover:text-gray-900 transition-colors font-medium text-sm lg:text-base">
+              <Link href="#pricing" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors font-medium text-sm lg:text-base">
                 Pricing
               </Link>
               <Link
                 href="https://github.com/Razikus/supabase-nextjs-template"
-                className="text-gray-600 hover:text-gray-900 transition-colors font-medium text-sm lg:text-base"
+                className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors font-medium text-sm lg:text-base"
                 target="_blank"
                 rel="noopener noreferrer"
               >
                 Documentation
               </Link>
-              <Link
-                href="https://github.com/Razikus/supabase-nextjs-template"
-                className="bg-primary-800 text-white px-4 py-2 rounded-lg hover:bg-primary-900 transition-colors font-medium text-sm lg:text-base"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Grab This Template
-              </Link>
+              
+              {/* Theme Toggle Button */}
+              {mounted && (
+                <button
+                  onClick={toggleTheme}
+                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+                  title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+                >
+                  {isDark ? (
+                    <Sun className="h-5 w-5 text-yellow-500" />
+                  ) : (
+                    <Moon className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                  )}
+                </button>
+              )}
+              
               <AuthAwareButtons variant="nav" />
             </div>
 
             {/* Mobile Menu Button */}
-            <button
-              className="md:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
-              onClick={() => setIsMobileMenuOpen(true)}
-              aria-label="Open menu"
-            >
-              <Menu className="h-6 w-6" />
-            </button>
+            <div className="flex items-center space-x-2 md:hidden">
+              {/* Theme Toggle Button za mobile */}
+              {mounted && (
+                <button
+                  onClick={toggleTheme}
+                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+                >
+                  {isDark ? (
+                    <Sun className="h-5 w-5 text-yellow-500" />
+                  ) : (
+                    <Moon className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                  )}
+                </button>
+              )}
+              
+              <button
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                onClick={() => setIsMobileMenuOpen(true)}
+                aria-label="Open menu"
+              >
+                <Menu className="h-6 w-6" />
+              </button>
+            </div>
           </div>
         </div>
       </nav>

@@ -19,19 +19,18 @@ const legalDocuments = {
     }
 } as const;
 
-type LegalDocument = keyof typeof legalDocuments;
+type LegalDocumentType = keyof typeof legalDocuments;
 
 interface LegalPageProps {
-    document: LegalDocument;
-    lng: string;
+    params: Promise<{
+        document: LegalDocumentType;
+    }>;
 }
 
-interface LegalPageParams {
-    params: Promise<LegalPageProps>
-}
-
-export default function LegalPage({ params }: LegalPageParams) {
-    const {document} = React.use<LegalPageProps>(params);
+export default function LegalPage({ params }: LegalPageProps) {
+    // Properly unwrap the params Promise using React.use()
+    const unwrappedParams = React.use(params);
+    const { document } = unwrappedParams;
 
     if (!legalDocuments[document]) {
         notFound();
@@ -40,7 +39,7 @@ export default function LegalPage({ params }: LegalPageParams) {
     const { title, path } = legalDocuments[document];
 
     return (
-        <div className="container mx-auto px-4 py-8">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-8">
             <LegalDocument
                 title={title}
                 filePath={path}

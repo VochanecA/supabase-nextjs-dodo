@@ -21,11 +21,11 @@ export default function DashboardContent() {
 
   const getSubscriptionStatusColor = useCallback((status: string) => {
     switch (status) {
-      case 'active': return 'text-green-600 bg-green-50 border-green-200';
-      case 'trialing': return 'text-blue-600 bg-blue-50 border-blue-200';
-      case 'past_due': return 'text-orange-600 bg-orange-50 border-orange-200';
-      case 'cancelled': return 'text-gray-600 bg-gray-50 border-gray-200';
-      default: return 'text-gray-600 bg-gray-50 border-gray-200';
+      case 'active': return 'text-green-600 bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400';
+      case 'trialing': return 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400';
+      case 'past_due': return 'text-orange-600 bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800 dark:text-orange-400';
+      case 'cancelled': return 'text-gray-600 bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400';
+      default: return 'text-gray-600 bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400';
     }
   }, []);
 
@@ -89,19 +89,19 @@ export default function DashboardContent() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+      <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 dark:border-primary-400"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-6 bg-white dark:bg-gray-900 min-h-screen">
       {/* Header with Back Button */}
       <div className="flex items-center gap-4">
         <button
           onClick={goToHomepage}
-          className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+          className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
           aria-label="Go back to homepage"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -111,10 +111,12 @@ export default function DashboardContent() {
       </div>
 
       {/* Welcome Card */}
-      <Card>
+      <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
         <CardHeader className="pb-4">
-          <CardTitle className="text-2xl">Welcome, {user?.email?.split('@')[0]}! 👋</CardTitle>
-          <CardDescription className="flex items-center gap-2">
+          <CardTitle className="text-2xl text-gray-900 dark:text-white">
+            Welcome, {user?.email?.split('@')[0]}! 👋
+          </CardTitle>
+          <CardDescription className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
             <CalendarDays className="h-4 w-4" />
             Member for {daysSinceRegistration} days
           </CardDescription>
@@ -124,25 +126,25 @@ export default function DashboardContent() {
       {/* Subscription & Billing Section */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Subscription Status */}
-        <Card>
+        <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
+            <CardTitle className="flex items-center gap-2 text-lg text-gray-900 dark:text-white">
               <CreditCard className="h-5 w-5" />
               Subscription Status
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-gray-600 dark:text-gray-400">
               Your current plan and billing information
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {customer ? (
               <>
-                <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
+                <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600">
                   <div className="flex items-center gap-3">
-                    <User className="h-4 w-4 text-gray-500" />
+                    <User className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                     <div>
-                      <p className="font-medium text-sm">Customer ID</p>
-                      <p className="text-xs text-gray-500 font-mono">{customer.customer_id}</p>
+                      <p className="font-medium text-sm text-gray-900 dark:text-white">Customer ID</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">{customer.customer_id}</p>
                     </div>
                   </div>
                 </div>
@@ -151,8 +153,8 @@ export default function DashboardContent() {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="font-medium">Current Plan</p>
-                        <p className="text-sm text-gray-500 capitalize">
+                        <p className="font-medium text-gray-900 dark:text-white">Current Plan</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">
                           {subscription.product_id?.replace(/_/g, ' ') || 'Standard Plan'}
                         </p>
                       </div>
@@ -162,9 +164,9 @@ export default function DashboardContent() {
                     </div>
 
                     {isTrialActive && subscription.trial_end_date && (
-                      <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        <AlertCircle className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                        <p className="text-sm text-blue-700">
+                      <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                        <AlertCircle className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                        <p className="text-sm text-blue-700 dark:text-blue-300">
                           Trial ends on {formatDate(subscription.trial_end_date)}
                         </p>
                       </div>
@@ -173,23 +175,23 @@ export default function DashboardContent() {
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       {subscription.next_billing_date && (
                         <div>
-                          <span className="text-gray-600">Next billing:</span>
-                          <p className="font-medium">{formatDate(subscription.next_billing_date)}</p>
+                          <span className="text-gray-600 dark:text-gray-400">Next billing:</span>
+                          <p className="font-medium text-gray-900 dark:text-white">{formatDate(subscription.next_billing_date)}</p>
                         </div>
                       )}
                       <div>
-                        <span className="text-gray-600">Started:</span>
-                        <p className="font-medium">{formatDate(subscription.created_at)}</p>
+                        <span className="text-gray-600 dark:text-gray-400">Started:</span>
+                        <p className="font-medium text-gray-900 dark:text-white">{formatDate(subscription.created_at)}</p>
                       </div>
                     </div>
                   </div>
                 ) : (
                   <div className="text-center py-4">
                     <AlertCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-gray-600 mb-2">No active subscription</p>
+                    <p className="text-gray-600 dark:text-gray-400 mb-2">No active subscription</p>
                     <Link 
                       href="/pricing" 
-                      className="inline-flex items-center gap-1 text-primary-600 hover:text-primary-700 font-medium text-sm"
+                      className="inline-flex items-center gap-1 text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 font-medium text-sm"
                     >
                       Choose a plan <ExternalLinkIcon className="h-3 w-3" />
                     </Link>
@@ -218,8 +220,8 @@ export default function DashboardContent() {
             ) : (
               <div className="text-center py-6">
                 <AlertCircle className="h-10 w-10 text-gray-400 mx-auto mb-3" />
-                <p className="text-gray-600 mb-2">No customer profile found</p>
-                <p className="text-sm text-gray-500 mb-4">
+                <p className="text-gray-600 dark:text-gray-400 mb-2">No customer profile found</p>
+                <p className="text-sm text-gray-500 dark:text-gray-500 mb-4">
                   Complete your first purchase to access billing features
                 </p>
                 <Link 
@@ -234,13 +236,13 @@ export default function DashboardContent() {
         </Card>
 
         {/* Transactions & Activity */}
-        <Card>
+        <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
+            <CardTitle className="flex items-center gap-2 text-lg text-gray-900 dark:text-white">
               <FileText className="h-5 w-5" />
               Recent Activity
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-gray-600 dark:text-gray-400">
               Your latest transactions and payments
             </CardDescription>
           </CardHeader>
@@ -250,12 +252,12 @@ export default function DashboardContent() {
                 {hasTransactions ? (
                   <div className="space-y-3">
                     {recentTransactions.map((transaction) => (
-                      <div key={transaction.transaction_id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors">
+                      <div key={transaction.transaction_id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors border-gray-200 dark:border-gray-600">
                         <div className="flex items-center gap-3 flex-1 min-w-0">
                           <div className={`p-2 rounded-full ${
                             transaction.status === 'succeeded' 
-                              ? 'bg-green-100 text-green-600' 
-                              : 'bg-gray-100 text-gray-600'
+                              ? 'bg-green-100 text-green-600 dark:bg-green-900/20 dark:text-green-400' 
+                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
                           }`}>
                             {transaction.status === 'succeeded' ? (
                               <CheckCircle2 className="h-4 w-4" />
@@ -264,20 +266,20 @@ export default function DashboardContent() {
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="font-medium text-sm truncate">
+                            <p className="font-medium text-sm truncate text-gray-900 dark:text-white">
                               {formatAmount(transaction.amount, transaction.currency)}
                             </p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
                               {formatDate(transaction.billed_at)}
                             </p>
                           </div>
                         </div>
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
                           transaction.status === 'succeeded' 
-                            ? 'bg-green-100 text-green-800' 
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' 
                             : transaction.status === 'refunded'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-gray-100 text-gray-800'
+                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400'
+                            : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-400'
                         }`}>
                           {transaction.status}
                         </span>
@@ -287,25 +289,25 @@ export default function DashboardContent() {
                 ) : (
                   <div className="text-center py-8">
                     <RotateCcw className="h-10 w-10 text-gray-400 mx-auto mb-3" />
-                    <p className="text-gray-600">No transactions yet</p>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-gray-600 dark:text-gray-400">No transactions yet</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
                       Your payment history will appear here
                     </p>
                   </div>
                 )}
 
                 {/* Quick Stats */}
-                <div className="mt-6 p-4 bg-gray-50 rounded-lg border">
+                <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
                   <div className="grid grid-cols-2 gap-4 text-center">
                     <div>
-                      <p className="text-2xl font-bold text-gray-900">{transactions.length}</p>
-                      <p className="text-xs text-gray-600">Total Transactions</p>
+                      <p className="text-2xl font-bold text-gray-900 dark:text-white">{transactions.length}</p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">Total Transactions</p>
                     </div>
                     <div>
-                      <p className="text-2xl font-bold text-gray-900">
+                      <p className="text-2xl font-bold text-gray-900 dark:text-white">
                         {isSubscribed ? 'Active' : 'Inactive'}
                       </p>
-                      <p className="text-xs text-gray-600">Subscription</p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">Subscription</p>
                     </div>
                   </div>
                 </div>
@@ -313,8 +315,8 @@ export default function DashboardContent() {
             ) : (
               <div className="text-center py-8">
                 <FileText className="h-10 w-10 text-gray-400 mx-auto mb-3" />
-                <p className="text-gray-600">No activity to show</p>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-gray-600 dark:text-gray-400">No activity to show</p>
+                <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
                   Complete a purchase to see your transaction history
                 </p>
               </div>
@@ -324,49 +326,49 @@ export default function DashboardContent() {
       </div>
 
       {/* Quick Actions */}
-      <Card>
+      <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
         <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-          <CardDescription>Frequently used features</CardDescription>
+          <CardTitle className="text-gray-900 dark:text-white">Quick Actions</CardTitle>
+          <CardDescription className="text-gray-600 dark:text-gray-400">Frequently used features</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <Link
               href="/app/user-settings"
-              className="flex items-center gap-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors group"
+              className="flex items-center gap-3 p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-gray-200 dark:border-gray-600"
             >
-              <div className="p-2 bg-primary-50 rounded-full group-hover:bg-primary-100 transition-colors">
-                <Settings className="h-4 w-4 text-primary-600" />
+              <div className="p-2 bg-primary-50 dark:bg-primary-900/20 rounded-full group-hover:bg-primary-100 dark:group-hover:bg-primary-900/30 transition-colors">
+                <Settings className="h-4 w-4 text-primary-600 dark:text-primary-400" />
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="font-medium truncate">User Settings</h3>
-                <p className="text-sm text-gray-500 truncate">Manage account preferences</p>
+                <h3 className="font-medium truncate text-gray-900 dark:text-white">User Settings</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">Manage account preferences</p>
               </div>
             </Link>
 
             <Link
               href="/pricing"
-              className="flex items-center gap-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors group"
+              className="flex items-center gap-3 p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-gray-200 dark:border-gray-600"
             >
-              <div className="p-2 bg-green-50 rounded-full group-hover:bg-green-100 transition-colors">
-                <CreditCard className="h-4 w-4 text-green-600" />
+              <div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-full group-hover:bg-green-100 dark:group-hover:bg-green-900/30 transition-colors">
+                <CreditCard className="h-4 w-4 text-green-600 dark:text-green-400" />
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="font-medium truncate">Upgrade Plan</h3>
-                <p className="text-sm text-gray-500 truncate">Explore pricing options</p>
+                <h3 className="font-medium truncate text-gray-900 dark:text-white">Upgrade Plan</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">Explore pricing options</p>
               </div>
             </Link>
 
             <Link
               href="/app/table"
-              className="flex items-center gap-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors group"
+              className="flex items-center gap-3 p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-gray-200 dark:border-gray-600"
             >
-              <div className="p-2 bg-blue-50 rounded-full group-hover:bg-blue-100 transition-colors">
-                <ExternalLink className="h-4 w-4 text-blue-600" />
+              <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-full group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors">
+                <ExternalLink className="h-4 w-4 text-blue-600 dark:text-blue-400" />
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="font-medium truncate">Example Page</h3>
-                <p className="text-sm text-gray-500 truncate">Check out features</p>
+                <h3 className="font-medium truncate text-gray-900 dark:text-white">Example Page</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">Check out features</p>
               </div>
             </Link>
           </div>

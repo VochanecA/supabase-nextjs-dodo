@@ -1,9 +1,10 @@
+// nextjs/src/app/auth/layout.tsx
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 
 export default function AuthLayout({
-                                       children,
-                                   }: {
+    children,
+}: {
     children: React.ReactNode;
 }) {
     const productName = process.env.NEXT_PUBLIC_PRODUCTNAME;
@@ -29,18 +30,19 @@ export default function AuthLayout({
     ];
 
     return (
-        <div className="flex min-h-screen">
-            <div className="w-full lg:w-1/2 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 bg-white relative">
+        <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900">
+            {/* Left Side - Auth Form */}
+            <div className="w-full lg:w-1/2 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 bg-white dark:bg-gray-900 relative">
                 <Link
                     href="/"
-                    className="absolute left-8 top-8 flex items-center text-sm text-gray-600 hover:text-gray-900 transition-colors"
+                    className="absolute left-8 top-8 flex items-center text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors"
                 >
                     <ArrowLeft className="w-4 h-4 mr-2" />
                     Back to Homepage
                 </Link>
 
                 <div className="sm:mx-auto sm:w-full sm:max-w-md">
-                    <h2 className="text-center text-3xl font-bold tracking-tight text-gray-900">
+                    <h2 className="text-center text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
                         {productName}
                     </h2>
                 </div>
@@ -50,7 +52,8 @@ export default function AuthLayout({
                 </div>
             </div>
 
-            <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary-600 to-primary-800">
+            {/* Right Side - Testimonials */}
+            <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-600 to-blue-800 dark:from-blue-700 dark:to-blue-900">
                 <div className="w-full flex items-center justify-center p-12">
                     <div className="space-y-6 max-w-lg">
                         <h3 className="text-white text-2xl font-bold mb-8">
@@ -59,7 +62,7 @@ export default function AuthLayout({
                         {testimonials.map((testimonial, index) => (
                             <div
                                 key={index}
-                                className="relative bg-white/5 backdrop-blur-sm rounded-xl p-6 border border-white/10 shadow-xl"
+                                className="relative bg-white/5 backdrop-blur-sm rounded-xl p-6 border border-white/10 shadow-xl hover:bg-white/10 transition-all duration-300"
                             >
                                 <div className="flex items-start space-x-4">
                                     <div className="flex-shrink-0">
@@ -75,7 +78,7 @@ export default function AuthLayout({
                                             <p className="text-sm font-medium text-white">
                                                 {testimonial.author}
                                             </p>
-                                            <p className="text-sm text-primary-200">
+                                            <p className="text-sm text-blue-200 dark:text-slate-300">
                                                 {testimonial.role}
                                             </p>
                                         </div>
@@ -84,7 +87,7 @@ export default function AuthLayout({
                             </div>
                         ))}
                         <div className="mt-8 text-center">
-                            <p className="text-primary-100 text-sm">
+                            <p className="text-blue-100 dark:text-black text-sm">
                                 Join thousands of developers building with {productName}
                             </p>
                         </div>
