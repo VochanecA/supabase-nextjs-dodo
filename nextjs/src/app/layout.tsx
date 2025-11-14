@@ -20,7 +20,7 @@ const jetbrainsMono = JetBrains_Mono({
   preload: false,
 });
 
-const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCTNAME || "Your SaaS";
+const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCTNAME || "Your Best SaaS";
 const HOMEPAGE_TITLE = `${PRODUCT_NAME} - Bootstrap Your SaaS in 5 Minutes`;
 const HOMEPAGE_DESCRIPTION = "Launch your SaaS product in days, not months. Complete with authentication, payment processing, and enterprise-grade security built right in.";
 const THEME = process.env.NEXT_PUBLIC_THEME || "theme-sass3";

@@ -2,25 +2,20 @@
 import { Webhooks } from '@dodopayments/nextjs'
 import { createServerAdminClient } from '@/lib/supabase/serverAdminClient'
 
-// --- Type Definitions ---
+// --- Type Definitions based on actual Dodo payload ---
 interface DodoCustomer {
   customer_id: string
   email: string
   name?: string
+  phone_number?: string | null
 }
 
-interface DodoPaymentSucceededData {
-  payment_id: string
-  status: string
-  total_amount: number
-  currency: string
-  customer: DodoCustomer
-  subscription_id?: string
-  payment_method?: string
-  card_last_four?: string
-  card_network?: string
-  card_type?: string
-  metadata?: Record<string, unknown>
+interface DodoBillingAddress {
+  city: string
+  country: string
+  state: string
+  street: string
+  zipcode: string
 }
 
 interface DodoSubscriptionData {
@@ -35,6 +30,38 @@ interface DodoSubscriptionData {
   trial_period_days?: number
   metadata?: Record<string, unknown>
   created_at?: string
+  expires_at?: string
+  previous_billing_date?: string
+  recurring_pre_tax_amount?: number
+  cancelled_at?: string | null
+  cancel_at_next_billing_date?: boolean
+  billing?: DodoBillingAddress
+  addons?: unknown[]
+  meters?: unknown[]
+  on_demand?: boolean
+  payload_type?: string
+  payment_frequency_count?: number
+  payment_frequency_interval?: string
+  subscription_period_count?: number
+  subscription_period_interval?: string
+  tax_id?: string | null
+  tax_inclusive?: boolean
+  discount_cycles_remaining?: number | null
+  discount_id?: string | null
+}
+
+interface DodoPaymentSucceededData {
+  payment_id: string
+  status: string
+  total_amount: number
+  currency: string
+  customer: DodoCustomer
+  subscription_id?: string
+  payment_method?: string
+  card_last_four?: string
+  card_network?: string
+  card_type?: string
+  metadata?: Record<string, unknown>
 }
 
 interface DodoRefundData {
@@ -64,6 +91,7 @@ interface DodoWebhookPayload<T = unknown> {
   type: string
   data: T
   timestamp: string
+  business_id?: string
 }
 
 type MyWebhookPayload = 
@@ -221,6 +249,9 @@ async function upsertRow<T extends DatabaseRow>(
     if ('total_amount' in processedRow && typeof processedRow.total_amount === 'number') {
       processedRow.total_amount = Math.round(processedRow.total_amount * 100)
     }
+    if ('recurring_pre_tax_amount' in processedRow && typeof processedRow.recurring_pre_tax_amount === 'number') {
+      processedRow.recurring_pre_tax_amount = Math.round(processedRow.recurring_pre_tax_amount * 100)
+    }
     
     // Use type assertion for Supabase upsert with proper typing
     const { error } = await supabase
@@ -361,6 +392,14 @@ async function handleSubscription(
   
   const customerId = await upsertCustomer(data.customer)
 
+  // Include billing address in metadata if available
+  const enhancedMetadata = {
+    ...data.metadata,
+    ...(data.billing && { billing_address: data.billing }),
+    ...(data.cancelled_at && { cancelled_at: data.cancelled_at }),
+    ...(data.cancel_at_next_billing_date !== undefined && { cancel_at_next_billing_date: data.cancel_at_next_billing_date })
+  }
+
   const subscriptionRow: SubscriptionRow = {
     subscription_id: data.subscription_id,
     customer_id: customerId,
@@ -368,17 +407,18 @@ async function handleSubscription(
     subscription_status: data.status,
     quantity: data.quantity ?? 1,
     currency: data.currency ?? null,
-    start_date: data.start_date ?? new Date().toISOString(),
+    start_date: data.created_at ?? new Date().toISOString(),
     next_billing_date: data.next_billing_date ?? null,
     trial_end_date: data.trial_period_days
       ? new Date(Date.now() + data.trial_period_days * 24 * 60 * 60 * 1000).toISOString()
       : null,
-    metadata: data.metadata ?? {},
+    metadata: enhancedMetadata,
     created_at: data.created_at ?? new Date().toISOString(),
     updated_at: new Date().toISOString()
   }
 
   await upsertRow('subscriptions', subscriptionRow, 'subscription_id')
+  log(`✅ Processed subscription ${data.subscription_id} with status: ${data.status}`)
 }
 
 async function handleTransaction(
@@ -427,6 +467,7 @@ async function handleTransaction(
   }
 
   await upsertRow('transactions', transactionRow, 'transaction_id')
+  log(`✅ Processed payment ${data.payment_id} for subscription: ${data.subscription_id}`)
 }
 
 async function handleRefund(
@@ -451,6 +492,7 @@ async function handleRefund(
   }
 
   await upsertRow('refunds', refundRow, 'refund_id')
+  log(`✅ Processed refund ${data.refund_id} for payment: ${data.payment_id}`)
 }
 
 async function handleDispute(
@@ -472,6 +514,7 @@ async function handleDispute(
   }
 
   await upsertRow('disputes', disputeRow, 'dispute_id')
+  log(`✅ Processed dispute ${data.dispute_id} for payment: ${data.payment_id}`)
 }
 
 // --- Webhook Handler ---
@@ -480,6 +523,8 @@ export const POST = Webhooks({
   
   onPayload: async (payload: unknown) => {
     try {
+      console.log('🔔 Raw Dodo Webhook payload:', JSON.stringify(payload, null, 2))
+      
       const webhookPayload = payload as MyWebhookPayload
       
       log(`🔔 Received webhook event: ${webhookPayload.type}`)
