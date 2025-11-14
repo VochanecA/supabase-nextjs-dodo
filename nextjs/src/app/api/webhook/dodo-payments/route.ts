@@ -186,7 +186,87 @@ interface ProductQueryResult {
   product_id: string
 }
 
-// --- Type Guards ---
+// --- Runtime Type Guards ---
+function isValidCustomer(obj: unknown): obj is DodoCustomer {
+  if (typeof obj !== 'object' || obj === null) return false
+  
+  const customer = obj as Record<string, unknown>
+  return (
+    typeof customer.customer_id === 'string' && 
+    typeof customer.email === 'string'
+  )
+}
+
+function isValidPaymentSucceededData(obj: unknown): obj is DodoPaymentSucceededData {
+  if (typeof obj !== 'object' || obj === null) return false
+  
+  const data = obj as Record<string, unknown>
+  return (
+    typeof data.payment_id === 'string' && 
+    typeof data.total_amount === 'number' &&
+    isValidCustomer(data.customer)
+  )
+}
+
+function isValidSubscriptionData(obj: unknown): obj is DodoSubscriptionData {
+  if (typeof obj !== 'object' || obj === null) return false
+  
+  const data = obj as Record<string, unknown>
+  return (
+    typeof data.subscription_id === 'string' && 
+    typeof data.status === 'string' &&
+    isValidCustomer(data.customer)
+  )
+}
+
+function isValidRefundData(obj: unknown): obj is DodoRefundData {
+  if (typeof obj !== 'object' || obj === null) return false
+  
+  const data = obj as Record<string, unknown>
+  return (
+    typeof data.refund_id === 'string' && 
+    typeof data.payment_id === 'string' &&
+    typeof data.amount === 'number' &&
+    isValidCustomer(data.customer)
+  )
+}
+
+function isValidDisputeData(obj: unknown): obj is DodoDisputeData {
+  if (typeof obj !== 'object' || obj === null) return false
+  
+  const data = obj as Record<string, unknown>
+  return (
+    typeof data.dispute_id === 'string' && 
+    typeof data.payment_id === 'string'
+  )
+}
+
+function isValidWebhookPayload(obj: unknown): obj is MyWebhookPayload {
+  if (typeof obj !== 'object' || obj === null) return false
+  
+  const payload = obj as Record<string, unknown>
+  const { type, data } = payload
+  
+  if (typeof type !== 'string' || !data) return false
+  
+  switch (type) {
+    case 'payment.succeeded':
+      return isValidPaymentSucceededData(data)
+    case 'subscription.active':
+    case 'subscription.created':
+    case 'subscription.cancelled':
+    case 'subscription.renewed':
+      return isValidSubscriptionData(data)
+    case 'payment.refund':
+      return isValidRefundData(data)
+    case 'payment.dispute':
+      return isValidDisputeData(data)
+    default:
+      return false
+  }
+}
+
+// --- Type Guards for discriminated union ---
 const isPaymentSucceeded = (payload: MyWebhookPayload): payload is DodoWebhookPayload<DodoPaymentSucceededData> & { type: 'payment.succeeded' } =>
   payload.type === 'payment.succeeded'
 
@@ -393,11 +473,18 @@ async function handleSubscription(
   const customerId = await upsertCustomer(data.customer)
 
   // Include billing address in metadata if available
-  const enhancedMetadata = {
+  const enhancedMetadata: Record<string, unknown> = {
     ...data.metadata,
-    ...(data.billing && { billing_address: data.billing }),
-    ...(data.cancelled_at && { cancelled_at: data.cancelled_at }),
-    ...(data.cancel_at_next_billing_date !== undefined && { cancel_at_next_billing_date: data.cancel_at_next_billing_date })
+  }
+
+  if (data.billing) {
+    enhancedMetadata.billing_address = data.billing
+  }
+  if (data.cancelled_at) {
+    enhancedMetadata.cancelled_at = data.cancelled_at
+  }
+  if (data.cancel_at_next_billing_date !== undefined) {
+    enhancedMetadata.cancel_at_next_billing_date = data.cancel_at_next_billing_date
   }
 
   const subscriptionRow: SubscriptionRow = {
@@ -525,12 +612,18 @@ export const POST = Webhooks({
     try {
       console.log('🔔 Raw Dodo Webhook payload:', JSON.stringify(payload, null, 2))
       
-      const webhookPayload = payload as MyWebhookPayload
+      // Runtime validation without Zod
+      if (!isValidWebhookPayload(payload)) {
+        log('❌ Invalid webhook payload structure')
+        throw new Error('Invalid webhook payload')
+      }
+      
+      const webhookPayload = payload
       
       log(`🔔 Received webhook event: ${webhookPayload.type}`)
 
       // Handle customer upsert for all events that have customer data
-      if (webhookPayload.data && 'customer' in webhookPayload.data && webhookPayload.data.customer) {
+      if ('customer' in webhookPayload.data && webhookPayload.data.customer) {
         await upsertCustomer(webhookPayload.data.customer)
       }
 
@@ -549,8 +642,7 @@ export const POST = Webhooks({
       } else if (isDispute(webhookPayload)) {
         await handleDispute(webhookPayload)
       } else {
-        const unhandledPayload = payload as { type: string }
-        log(`⚠️ Unhandled webhook event type: ${unhandledPayload.type}`)
+        // log(`⚠️ Unhandled webhook event type: ${webhookPayload.type}`)
       }
 
       log(`✅ Successfully processed webhook: ${webhookPayload.type}`)
