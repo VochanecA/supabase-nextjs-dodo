@@ -311,19 +311,28 @@ type DatabaseRow =
   | RefundRow 
   | DisputeRow
 
-// --- Webhook Signature Verification ---
-function verifyWebhookSignature(payload: string, signature: string): boolean {
+// --- Standard Webhooks Signature Verification ---
+function verifyWebhookSignature(
+  payload: string, 
+  signature: string,
+  webhookId: string,
+  timestamp: string
+): boolean {
   const webhookSecret = process.env.DODO_WEBHOOK_SECRET
   if (!webhookSecret) {
     log('❌ DODO_WEBHOOK_SECRET not configured')
     return false
   }
 
+  // Build the signed message according to Standard Webhooks spec
+  const signedContent = `${webhookId}.${timestamp}.${payload}`
+  
   const expectedSignature = crypto
     .createHmac('sha256', webhookSecret)
-    .update(payload)
+    .update(signedContent)
     .digest('hex')
 
+  // Compare signatures securely
   return crypto.timingSafeEqual(
     Buffer.from(signature),
     Buffer.from(expectedSignature)
@@ -619,16 +628,25 @@ async function handleDispute(
 // --- Main Webhook Handler ---
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    const signature = request.headers.get('x-dodo-signature')
+    // Get Standard Webhooks headers
+    const signature = request.headers.get('webhook-signature')
+    const webhookId = request.headers.get('webhook-id')
+    const timestamp = request.headers.get('webhook-timestamp')
     const payload = await request.text()
 
-    if (!signature) {
-      log('❌ Missing webhook signature')
-      return NextResponse.json({ error: 'Missing signature' }, { status: 401 })
+    log('🔔 Headers received:', {
+      signature: signature ? 'present' : 'missing',
+      webhookId: webhookId ? 'present' : 'missing', 
+      timestamp: timestamp ? 'present' : 'missing'
+    })
+
+    if (!signature || !webhookId || !timestamp) {
+      log('❌ Missing required webhook headers')
+      return NextResponse.json({ error: 'Missing required headers' }, { status: 401 })
     }
 
-    // Verify webhook signature
-    if (!verifyWebhookSignature(payload, signature)) {
+    // Verify webhook signature according to Standard Webhooks spec
+    if (!verifyWebhookSignature(payload, signature, webhookId, timestamp)) {
       log('❌ Invalid webhook signature')
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }
@@ -672,7 +690,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } else if (isDispute(webhookPayload)) {
       await handleDispute(webhookPayload)
     } else {
-      // log(`⚠️ Unhandled webhook event type: ${webhookPayload.type}`)
+    //  log(`⚠️ Unhandled webhook event type: ${webhookPayload.type}`)
     }
 
     log(`✅ Successfully processed webhook: ${webhookPayload.type}`)
