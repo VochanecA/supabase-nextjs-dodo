@@ -1,6 +1,7 @@
 // src/app/api/webhook/dodo-payments/route.ts
-import { Webhooks } from '@dodopayments/nextjs'
 import { createServerAdminClient } from '@/lib/supabase/serverAdminClient'
+import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'crypto'
 
 // --- Type Definitions based on actual Dodo payload ---
 interface DodoCustomer {
@@ -310,6 +311,25 @@ type DatabaseRow =
   | RefundRow 
   | DisputeRow
 
+// --- Webhook Signature Verification ---
+function verifyWebhookSignature(payload: string, signature: string): boolean {
+  const webhookSecret = process.env.DODO_WEBHOOK_SECRET
+  if (!webhookSecret) {
+    log('❌ DODO_WEBHOOK_SECRET not configured')
+    return false
+  }
+
+  const expectedSignature = crypto
+    .createHmac('sha256', webhookSecret)
+    .update(payload)
+    .digest('hex')
+
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  )
+}
+
 // --- Supabase Helpers ---
 async function upsertRow<T extends DatabaseRow>(
   table: DatabaseTable,
@@ -333,7 +353,6 @@ async function upsertRow<T extends DatabaseRow>(
       processedRow.recurring_pre_tax_amount = Math.round(processedRow.recurring_pre_tax_amount * 100)
     }
     
-    // Use type assertion for Supabase upsert with proper typing
     const { error } = await supabase
       .from(table)
       .upsert([processedRow] as never[], { 
@@ -376,14 +395,12 @@ async function upsertCustomer(customer: DodoCustomer): Promise<string> {
   try {
     const supabase = await createServerAdminClient()
     
-    // Explicitly type the query result
     const { data: existingByEmail, error: emailError } = await supabase
       .from('customers')
       .select('customer_id, auth_user_id')
       .eq('email', customer.email)
       .single<CustomerQueryResult>()
 
-    // Handle "no rows returned" error gracefully
     if (emailError && emailError.code !== 'PGRST116') {
       throw emailError
     }
@@ -391,7 +408,6 @@ async function upsertCustomer(customer: DodoCustomer): Promise<string> {
     if (existingByEmail?.customer_id) {
       log(`🔄 Reusing existing customer_id ${existingByEmail.customer_id} for email ${customer.email}`)
       
-      // Update auth_user_id if not set
       if (!existingByEmail.auth_user_id) {
         const authUserId = await findAuthUserIdByEmail(customer.email)
         if (authUserId) {
@@ -400,7 +416,6 @@ async function upsertCustomer(customer: DodoCustomer): Promise<string> {
             updated_at: new Date().toISOString() 
           }
           
-          // Use type assertion for update
           await supabase
             .from('customers')
             .update(updateData as never)
@@ -411,7 +426,6 @@ async function upsertCustomer(customer: DodoCustomer): Promise<string> {
       return existingByEmail.customer_id
     }
 
-    // Find auth user ID for linking
     const authUserId = await findAuthUserIdByEmail(customer.email)
 
     const customerRow: CustomerRow = {
@@ -435,7 +449,6 @@ async function ensureProductExists(productId: string): Promise<void> {
   try {
     const supabase = await createServerAdminClient()
     
-    // Check if product already exists with explicit typing
     const { data: existingProduct } = await supabase
       .from('products')
       .select('product_id')
@@ -472,7 +485,6 @@ async function handleSubscription(
   
   const customerId = await upsertCustomer(data.customer)
 
-  // Include billing address in metadata if available
   const enhancedMetadata: Record<string, unknown> = {
     ...data.metadata,
   }
@@ -604,52 +616,74 @@ async function handleDispute(
   log(`✅ Processed dispute ${data.dispute_id} for payment: ${data.payment_id}`)
 }
 
-// --- Webhook Handler ---
-export const POST = Webhooks({
-  webhookKey: process.env.DODO_WEBHOOK_SECRET!,
-  
-  onPayload: async (payload: unknown) => {
-    try {
-      console.log('🔔 Raw Dodo Webhook payload:', JSON.stringify(payload, null, 2))
-      
-      // Runtime validation without Zod
-      if (!isValidWebhookPayload(payload)) {
-        log('❌ Invalid webhook payload structure')
-        throw new Error('Invalid webhook payload')
-      }
-      
-      const webhookPayload = payload
-      
-      log(`🔔 Received webhook event: ${webhookPayload.type}`)
+// --- Main Webhook Handler ---
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  try {
+    const signature = request.headers.get('x-dodo-signature')
+    const payload = await request.text()
 
-      // Handle customer upsert for all events that have customer data
-      if ('customer' in webhookPayload.data && webhookPayload.data.customer) {
-        await upsertCustomer(webhookPayload.data.customer)
-      }
-
-      // Route to appropriate handler
-      if (isPaymentSucceeded(webhookPayload)) {
-        await handleTransaction(webhookPayload)
-      } else if (
-        isSubscriptionActive(webhookPayload) || 
-        isSubscriptionCreated(webhookPayload) || 
-        isSubscriptionCancelled(webhookPayload) ||
-        isSubscriptionRenewed(webhookPayload)
-      ) {
-        await handleSubscription(webhookPayload)
-      } else if (isRefund(webhookPayload)) {
-        await handleRefund(webhookPayload)
-      } else if (isDispute(webhookPayload)) {
-        await handleDispute(webhookPayload)
-      } else {
-        // log(`⚠️ Unhandled webhook event type: ${webhookPayload.type}`)
-      }
-
-      log(`✅ Successfully processed webhook: ${webhookPayload.type}`)
-      
-    } catch (error) {
-      console.error('❌ Webhook processing error:', error)
-      throw error
+    if (!signature) {
+      log('❌ Missing webhook signature')
+      return NextResponse.json({ error: 'Missing signature' }, { status: 401 })
     }
+
+    // Verify webhook signature
+    if (!verifyWebhookSignature(payload, signature)) {
+      log('❌ Invalid webhook signature')
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
+
+    let parsedPayload: unknown
+    try {
+      parsedPayload = JSON.parse(payload)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (parseError) {
+      log('❌ Invalid JSON payload')
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
+
+    // Runtime validation
+    if (!isValidWebhookPayload(parsedPayload)) {
+      log('❌ Invalid webhook payload structure')
+      return NextResponse.json({ error: 'Invalid payload structure' }, { status: 400 })
+    }
+
+    const webhookPayload = parsedPayload
+    
+    log(`🔔 Received webhook event: ${webhookPayload.type}`)
+
+    // Handle customer upsert for all events that have customer data
+    if ('customer' in webhookPayload.data && webhookPayload.data.customer) {
+      await upsertCustomer(webhookPayload.data.customer)
+    }
+
+    // Route to appropriate handler
+    if (isPaymentSucceeded(webhookPayload)) {
+      await handleTransaction(webhookPayload)
+    } else if (
+      isSubscriptionActive(webhookPayload) || 
+      isSubscriptionCreated(webhookPayload) || 
+      isSubscriptionCancelled(webhookPayload) ||
+      isSubscriptionRenewed(webhookPayload)
+    ) {
+      await handleSubscription(webhookPayload)
+    } else if (isRefund(webhookPayload)) {
+      await handleRefund(webhookPayload)
+    } else if (isDispute(webhookPayload)) {
+      await handleDispute(webhookPayload)
+    } else {
+      // log(`⚠️ Unhandled webhook event type: ${webhookPayload.type}`)
+    }
+
+    log(`✅ Successfully processed webhook: ${webhookPayload.type}`)
+    
+    return NextResponse.json({ received: true })
+
+  } catch (error) {
+    console.error('❌ Webhook processing error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' }, 
+      { status: 500 }
+    )
   }
-})
+}
