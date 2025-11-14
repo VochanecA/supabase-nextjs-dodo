@@ -324,26 +324,46 @@ function verifyWebhookSignature(
     return false
   }
 
-  // Remove 'whsec_' prefix if present
-  const secret = webhookSecret.startsWith('whsec_') 
-    ? webhookSecret.slice(6) 
-    : webhookSecret
+  // Remove 'whsec_' prefix if present and decode from base64
+  let secret: Buffer
+  try {
+    const secretString = webhookSecret.startsWith('whsec_') 
+      ? webhookSecret.slice(6) 
+      : webhookSecret
+    
+    secret = Buffer.from(secretString, 'base64')
+    
+    log('🔐 Secret details:', {
+      original: webhookSecret,
+      cleaned: secretString,
+      secretLength: secret.length,
+      secretBytes: Array.from(secret).slice(0, 10) // First 10 bytes for debugging
+    })
+  } catch (error) {
+    log('❌ Error decoding secret from base64:', error)
+    return false
+  }
 
   // Build the signed message according to Standard Webhooks spec
   const signedContent = `${webhookId}.${timestampHeader}.${payload}`
   
-  // Compute HMAC SHA256 with base64 output
+  log('🔐 Signed content:', {
+    webhookId,
+    timestamp: timestampHeader,
+    payloadLength: payload.length,
+    signedContentLength: signedContent.length
+  })
+
+  // Compute HMAC SHA256 with base64 output using the decoded binary secret
   const expectedSignature = crypto
     .createHmac('sha256', secret)
-    .update(signedContent)
+    .update(signedContent, 'utf8')
     .digest('base64')
 
   log('🔐 Signature verification details:', {
     signatureHeader,
-    webhookId,
-    timestamp: timestampHeader,
-    payloadLength: payload.length,
-    expectedSignature
+    expectedSignature,
+    signedContentPreview: signedContent.substring(0, 100) + '...'
   })
 
   // Parse the signature header (can contain multiple signatures separated by spaces)
@@ -362,6 +382,14 @@ function verifyWebhookSignature(
         log(`❌ Signature mismatch for version ${version}`)
         log(`Received: ${signature}`)
         log(`Expected: ${expectedSignature}`)
+        
+        // Debug: check if it's a padding issue
+        const receivedNoPadding = signature.replace(/=+$/, '')
+        const expectedNoPadding = expectedSignature.replace(/=+$/, '')
+        if (receivedNoPadding === expectedNoPadding) {
+          log('⚠️ Signatures match without padding - padding issue detected')
+          return true
+        }
       }
     } else {
       log(`⚠️ Invalid signature format: ${sig}`)
