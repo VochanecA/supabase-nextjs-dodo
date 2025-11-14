@@ -314,9 +314,9 @@ type DatabaseRow =
 // --- Standard Webhooks Signature Verification ---
 function verifyWebhookSignature(
   payload: string, 
-  signature: string,
+  signatureHeader: string,
   webhookId: string,
-  timestamp: string
+  timestampHeader: string
 ): boolean {
   const webhookSecret = process.env.DODO_WEBHOOK_SECRET
   if (!webhookSecret) {
@@ -324,19 +324,72 @@ function verifyWebhookSignature(
     return false
   }
 
-  // Build the signed message according to Standard Webhooks spec
-  const signedContent = `${webhookId}.${timestamp}.${payload}`
-  
-  const expectedSignature = crypto
-    .createHmac('sha256', webhookSecret)
-    .update(signedContent)
-    .digest('hex')
+  // Remove 'whsec_' prefix if present
+  const secret = webhookSecret.startsWith('whsec_') 
+    ? webhookSecret.slice(6) 
+    : webhookSecret
 
-  // Compare signatures securely
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expectedSignature)
-  )
+  // Build the signed message according to Standard Webhooks spec
+  const signedContent = `${webhookId}.${timestampHeader}.${payload}`
+  
+  // Compute HMAC SHA256 with base64 output
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(signedContent)
+    .digest('base64')
+
+  log('🔐 Signature verification details:', {
+    signatureHeader,
+    webhookId,
+    timestamp: timestampHeader,
+    payloadLength: payload.length,
+    expectedSignature
+  })
+
+  // Parse the signature header (can contain multiple signatures separated by spaces)
+  const signatures = signatureHeader.split(' ')
+  
+  for (const sig of signatures) {
+    // Signature format: "v1,base64signature"
+    const [version, signature] = sig.split(',')
+    
+    if (version === 'v1' && signature) {
+      // Compare signatures
+      if (signature === expectedSignature) {
+        log('✅ Signature verified successfully')
+        return true
+      } else {
+        log(`❌ Signature mismatch for version ${version}`)
+        log(`Received: ${signature}`)
+        log(`Expected: ${expectedSignature}`)
+      }
+    } else {
+      log(`⚠️ Invalid signature format: ${sig}`)
+    }
+  }
+
+  log('❌ No valid signature found')
+  return false
+}
+
+// --- Timestamp Validation ---
+function isTimestampValid(timestamp: string, toleranceMs: number = 5 * 60 * 1000): boolean {
+  try {
+    const now = Date.now()
+    const timestampMs = parseInt(timestamp) * 1000 // Convert to milliseconds
+    
+    // Check if timestamp is within tolerance
+    const diff = Math.abs(now - timestampMs)
+    const isValid = diff <= toleranceMs
+    
+    log(`⏰ Timestamp validation: ${diff}ms diff, tolerance: ${toleranceMs}ms, valid: ${isValid}`)
+    
+    return isValid
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  } catch (error) {
+    log('❌ Invalid timestamp format')
+    return false
+  }
 }
 
 // --- Supabase Helpers ---
@@ -629,24 +682,34 @@ async function handleDispute(
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     // Get Standard Webhooks headers
-    const signature = request.headers.get('webhook-signature')
+    const signatureHeader = request.headers.get('webhook-signature')
     const webhookId = request.headers.get('webhook-id')
-    const timestamp = request.headers.get('webhook-timestamp')
+    const timestampHeader = request.headers.get('webhook-timestamp')
     const payload = await request.text()
 
     log('🔔 Headers received:', {
-      signature: signature ? 'present' : 'missing',
-      webhookId: webhookId ? 'present' : 'missing', 
-      timestamp: timestamp ? 'present' : 'missing'
+      signature: signatureHeader ? `present (${signatureHeader.substring(0, 50)}...)` : 'missing',
+      webhookId: webhookId ? `present (${webhookId})` : 'missing', 
+      timestamp: timestampHeader ? `present (${timestampHeader})` : 'missing',
+      payloadLength: payload.length
     })
 
-    if (!signature || !webhookId || !timestamp) {
+    // Validate required headers
+    if (!signatureHeader || !webhookId || !timestampHeader) {
       log('❌ Missing required webhook headers')
       return NextResponse.json({ error: 'Missing required headers' }, { status: 401 })
     }
 
+    // Validate timestamp (prevent replay attacks)
+    if (!isTimestampValid(timestampHeader)) {
+      log('❌ Invalid timestamp')
+      return NextResponse.json({ error: 'Invalid timestamp' }, { status: 401 })
+    }
+
     // Verify webhook signature according to Standard Webhooks spec
-    if (!verifyWebhookSignature(payload, signature, webhookId, timestamp)) {
+    const isValid = verifyWebhookSignature(payload, signatureHeader, webhookId, timestampHeader)
+    
+    if (!isValid) {
       log('❌ Invalid webhook signature')
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }
@@ -690,7 +753,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } else if (isDispute(webhookPayload)) {
       await handleDispute(webhookPayload)
     } else {
-    //  log(`⚠️ Unhandled webhook event type: ${webhookPayload.type}`)
+   //   log(`⚠️ Unhandled webhook event type: ${webhookPayload.type}`)
     }
 
     log(`✅ Successfully processed webhook: ${webhookPayload.type}`)
