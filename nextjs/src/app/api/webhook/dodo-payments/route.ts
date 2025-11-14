@@ -71,27 +71,29 @@ type MyWebhookPayload =
   | (DodoWebhookPayload<DodoSubscriptionData> & { type: 'subscription.active' })
   | (DodoWebhookPayload<DodoSubscriptionData> & { type: 'subscription.created' })
   | (DodoWebhookPayload<DodoSubscriptionData> & { type: 'subscription.cancelled' })
+  | (DodoWebhookPayload<DodoSubscriptionData> & { type: 'subscription.renewed' })
   | (DodoWebhookPayload<DodoRefundData> & { type: 'payment.refund' })
   | (DodoWebhookPayload<DodoDisputeData> & { type: 'payment.dispute' })
 
-// --- Custom Database Types with Index Signatures ---
-interface CustomerRow extends Record<string, unknown> {
+// --- Database Row Types ---
+interface CustomerRow {
   customer_id: string
   email: string
   name: string | null
-  auth_user_id?: string | null // Link to Supabase auth users
+  auth_user_id?: string | null
   created_at: string
   updated_at: string
 }
 
-interface ProductRow extends Record<string, unknown> {
+interface ProductRow {
   product_id: string
   name: string
+  description?: string | null
   created_at: string
   updated_at: string
 }
 
-interface SubscriptionRow extends Record<string, unknown> {
+interface SubscriptionRow {
   subscription_id: string
   customer_id: string
   product_id: string | null
@@ -106,7 +108,7 @@ interface SubscriptionRow extends Record<string, unknown> {
   updated_at: string
 }
 
-interface TransactionRow extends Record<string, unknown> {
+interface TransactionRow {
   transaction_id: string
   subscription_id: string | null
   customer_id: string
@@ -123,7 +125,7 @@ interface TransactionRow extends Record<string, unknown> {
   updated_at: string
 }
 
-interface RefundRow extends Record<string, unknown> {
+interface RefundRow {
   refund_id: string
   transaction_id: string
   customer_id: string
@@ -135,7 +137,7 @@ interface RefundRow extends Record<string, unknown> {
   created_at: string
 }
 
-interface DisputeRow extends Record<string, unknown> {
+interface DisputeRow {
   dispute_id: string
   transaction_id: string
   amount: number | null
@@ -144,6 +146,16 @@ interface DisputeRow extends Record<string, unknown> {
   dispute_status: string | null
   remarks: string | null
   created_at: string
+}
+
+// Explicit types for query results
+interface CustomerQueryResult {
+  customer_id: string
+  auth_user_id: string | null
+}
+
+interface ProductQueryResult {
+  product_id: string
 }
 
 // --- Type Guards ---
@@ -159,6 +171,9 @@ const isSubscriptionCreated = (payload: MyWebhookPayload): payload is DodoWebhoo
 const isSubscriptionCancelled = (payload: MyWebhookPayload): payload is DodoWebhookPayload<DodoSubscriptionData> & { type: 'subscription.cancelled' } =>
   payload.type === 'subscription.cancelled'
 
+const isSubscriptionRenewed = (payload: MyWebhookPayload): payload is DodoWebhookPayload<DodoSubscriptionData> & { type: 'subscription.renewed' } =>
+  payload.type === 'subscription.renewed'
+
 const isRefund = (payload: MyWebhookPayload): payload is DodoWebhookPayload<DodoRefundData> & { type: 'payment.refund' } =>
   payload.type === 'payment.refund'
 
@@ -167,39 +182,70 @@ const isDispute = (payload: MyWebhookPayload): payload is DodoWebhookPayload<Dod
 
 // --- Logging ---
 const log = (...args: unknown[]): void => {
-  if (process.env.NODE_ENV === 'development') {
-    console.log(...args)
-  }
+  console.log('🔔 Dodo Webhook:', ...args)
 }
 
+// --- Database Table Types ---
+type DatabaseTable = 
+  | 'customers' 
+  | 'products' 
+  | 'subscriptions' 
+  | 'transactions' 
+  | 'refunds' 
+  | 'disputes'
+
+type DatabaseRow = 
+  | CustomerRow 
+  | ProductRow 
+  | SubscriptionRow 
+  | TransactionRow 
+  | RefundRow 
+  | DisputeRow
+
 // --- Supabase Helpers ---
-async function upsertRow<T extends Record<string, unknown>>(
-  table: string,
+async function upsertRow<T extends DatabaseRow>(
+  table: DatabaseTable,
   row: T,
   conflictColumn: keyof T
 ): Promise<void> {
-  const supabase = await createServerAdminClient()
+  try {
+    const supabase = await createServerAdminClient()
+    
+    // Create a processed row with amount conversion
+    const processedRow: Record<string, unknown> = { ...row }
+    
+    // Convert amount fields to cents for bigint storage
+    if ('amount' in processedRow && typeof processedRow.amount === 'number') {
+      processedRow.amount = Math.round(processedRow.amount * 100)
+    }
+    if ('total_amount' in processedRow && typeof processedRow.total_amount === 'number') {
+      processedRow.total_amount = Math.round(processedRow.total_amount * 100)
+    }
+    
+    // Use type assertion for Supabase upsert with proper typing
+    const { error } = await supabase
+      .from(table)
+      .upsert([processedRow] as never[], { 
+        onConflict: conflictColumn as string 
+      })
   
-  // Use type assertion to bypass strict type checking
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase.from(table) as any)
-    .upsert([row], { 
-      onConflict: conflictColumn as string 
-    })
+    if (error) {
+      log(`❌ Failed to upsert ${table}:`, error.message)
+      throw error
+    }
   
-  if (error) {
-    log(`❌ Failed to upsert ${table}:`, error.message)
+    const conflictValue = processedRow[conflictColumn as string]
+    log(`✅ Upserted ${table}:`, String(conflictColumn), conflictValue)
+  } catch (error) {
+    log(`❌ Error upserting ${table}:`, error)
     throw error
   }
-  
-  log(`✅ Upserted ${table}:`, conflictColumn, row[conflictColumn])
 }
 
 async function findAuthUserIdByEmail(email: string): Promise<string | null> {
   try {
     const supabase = await createServerAdminClient()
     
-    // Use auth.admin to find user by email
     const { data, error } = await supabase.auth.admin.listUsers()
     
     if (error) {
@@ -216,17 +262,17 @@ async function findAuthUserIdByEmail(email: string): Promise<string | null> {
 }
 
 async function upsertCustomer(customer: DodoCustomer): Promise<string> {
-  const supabase = await createServerAdminClient()
-  
   try {
-    // Try to find existing customer by email
-    const { data: existingByEmail, error: emailError } = await (supabase
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .from('customers') as any)
+    const supabase = await createServerAdminClient()
+    
+    // Explicitly type the query result
+    const { data: existingByEmail, error: emailError } = await supabase
+      .from('customers')
       .select('customer_id, auth_user_id')
       .eq('email', customer.email)
-      .single()
+      .single<CustomerQueryResult>()
 
+    // Handle "no rows returned" error gracefully
     if (emailError && emailError.code !== 'PGRST116') {
       throw emailError
     }
@@ -238,9 +284,15 @@ async function upsertCustomer(customer: DodoCustomer): Promise<string> {
       if (!existingByEmail.auth_user_id) {
         const authUserId = await findAuthUserIdByEmail(customer.email)
         if (authUserId) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase.from('customers') as any)
-            .update({ auth_user_id: authUserId, updated_at: new Date().toISOString() })
+          const updateData = { 
+            auth_user_id: authUserId, 
+            updated_at: new Date().toISOString() 
+          }
+          
+          // Use type assertion for update
+          await supabase
+            .from('customers')
+            .update(updateData as never)
             .eq('customer_id', existingByEmail.customer_id)
         }
       }
@@ -255,7 +307,7 @@ async function upsertCustomer(customer: DodoCustomer): Promise<string> {
       customer_id: customer.customer_id,
       email: customer.email,
       name: customer.name ?? null,
-      auth_user_id: authUserId,
+      auth_user_id: authUserId ?? null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
@@ -269,14 +321,30 @@ async function upsertCustomer(customer: DodoCustomer): Promise<string> {
 }
 
 async function ensureProductExists(productId: string): Promise<void> {
-  const productRow: ProductRow = {
-    product_id: productId,
-    name: productId,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }
+  try {
+    const supabase = await createServerAdminClient()
+    
+    // Check if product already exists with explicit typing
+    const { data: existingProduct } = await supabase
+      .from('products')
+      .select('product_id')
+      .eq('product_id', productId)
+      .single<ProductQueryResult>()
 
-  await upsertRow('products', productRow, 'product_id')
+    if (!existingProduct) {
+      const productRow: ProductRow = {
+        product_id: productId,
+        name: productId,
+        description: `Product ${productId}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+
+      await upsertRow('products', productRow, 'product_id')
+    }
+  } catch (error) {
+    log('❌ Error ensuring product exists:', productId, error)
+  }
 }
 
 // --- Event Handlers ---
@@ -284,6 +352,8 @@ async function handleSubscription(
   payload: DodoWebhookPayload<DodoSubscriptionData>
 ): Promise<void> {
   const { data } = payload
+  
+  log(`📝 Handling subscription: ${data.subscription_id}, status: ${data.status}, type: ${payload.type}`)
   
   if (data.product_id) {
     await ensureProductExists(data.product_id)
@@ -315,28 +385,35 @@ async function handleTransaction(
   payload: DodoWebhookPayload<DodoPaymentSucceededData>
 ): Promise<void> {
   const { data } = payload
+  
+  log(`💰 Handling payment: ${data.payment_id}, amount: ${data.total_amount}`)
+  
   const customerId = await upsertCustomer(data.customer)
 
   if (data.subscription_id) {
-    const subscriptionUpdate: Partial<SubscriptionRow> = {
+    const subscriptionUpdate: SubscriptionRow = {
       subscription_id: data.subscription_id,
       customer_id: customerId,
+      product_id: null,
       subscription_status: 'active',
+      quantity: 1,
+      currency: null,
+      start_date: new Date().toISOString(),
+      next_billing_date: null,
+      trial_end_date: null,
+      metadata: {},
+      created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
     
-    await upsertRow(
-      'subscriptions', 
-      { ...subscriptionUpdate } as SubscriptionRow, 
-      'subscription_id'
-    )
+    await upsertRow('subscriptions', subscriptionUpdate, 'subscription_id')
   }
 
   const transactionRow: TransactionRow = {
     transaction_id: data.payment_id,
     subscription_id: data.subscription_id ?? null,
     customer_id: customerId,
-    status: data.status ?? 'unknown',
+    status: data.status ?? 'succeeded',
     amount: data.total_amount,
     currency: data.currency ?? 'USD',
     payment_method: data.payment_method ?? null,
@@ -356,6 +433,9 @@ async function handleRefund(
   payload: DodoWebhookPayload<DodoRefundData>
 ): Promise<void> {
   const { data } = payload
+  
+  log(`💸 Handling refund: ${data.refund_id}, amount: ${data.amount}`)
+  
   const customerId = await upsertCustomer(data.customer)
   
   const refundRow: RefundRow = {
@@ -366,7 +446,7 @@ async function handleRefund(
     currency: data.currency ?? null,
     is_partial: data.is_partial ?? false,
     reason: data.reason ?? null,
-    status: data.status ?? null,
+    status: data.status ?? 'completed',
     created_at: data.created_at ?? new Date().toISOString()
   }
 
@@ -377,6 +457,8 @@ async function handleDispute(
   payload: DodoWebhookPayload<DodoDisputeData>
 ): Promise<void> {
   const { data } = payload
+  
+  log(`⚖️ Handling dispute: ${data.dispute_id}`)
   
   const disputeRow: DisputeRow = {
     dispute_id: data.dispute_id,
@@ -394,37 +476,43 @@ async function handleDispute(
 
 // --- Webhook Handler ---
 export const POST = Webhooks({
- webhookKey: process.env.DODO_WEBHOOK_SECRET!,
+  webhookKey: process.env.DODO_WEBHOOK_SECRET!,
   
   onPayload: async (payload: unknown) => {
-    const webhookPayload = payload as MyWebhookPayload
-    
-    log('🔔 Received webhook event:', webhookPayload.type)
+    try {
+      const webhookPayload = payload as MyWebhookPayload
+      
+      log(`🔔 Received webhook event: ${webhookPayload.type}`)
 
-    // Handle customer upsert for all events that have customer data
-    if (
-      webhookPayload.data && 
-      'customer' in webhookPayload.data && 
-      webhookPayload.data.customer
-    ) {
-      await upsertCustomer(webhookPayload.data.customer)
-    }
+      // Handle customer upsert for all events that have customer data
+      if (webhookPayload.data && 'customer' in webhookPayload.data && webhookPayload.data.customer) {
+        await upsertCustomer(webhookPayload.data.customer)
+      }
 
-    // Route to appropriate handler
-    if (isPaymentSucceeded(webhookPayload)) {
-      await handleTransaction(webhookPayload)
-    } else if (
-      isSubscriptionActive(webhookPayload) || 
-      isSubscriptionCreated(webhookPayload) || 
-      isSubscriptionCancelled(webhookPayload)
-    ) {
-      await handleSubscription(webhookPayload)
-    } else if (isRefund(webhookPayload)) {
-      await handleRefund(webhookPayload)
-    } else if (isDispute(webhookPayload)) {
-      await handleDispute(webhookPayload)
-    } else {
-      // log(`🔔 Unhandled webhook event type: ${webhookPayload.type}`)
+      // Route to appropriate handler
+      if (isPaymentSucceeded(webhookPayload)) {
+        await handleTransaction(webhookPayload)
+      } else if (
+        isSubscriptionActive(webhookPayload) || 
+        isSubscriptionCreated(webhookPayload) || 
+        isSubscriptionCancelled(webhookPayload) ||
+        isSubscriptionRenewed(webhookPayload)
+      ) {
+        await handleSubscription(webhookPayload)
+      } else if (isRefund(webhookPayload)) {
+        await handleRefund(webhookPayload)
+      } else if (isDispute(webhookPayload)) {
+        await handleDispute(webhookPayload)
+      } else {
+        const unhandledPayload = payload as { type: string }
+        log(`⚠️ Unhandled webhook event type: ${unhandledPayload.type}`)
+      }
+
+      log(`✅ Successfully processed webhook: ${webhookPayload.type}`)
+      
+    } catch (error) {
+      console.error('❌ Webhook processing error:', error)
+      throw error
     }
   }
 })
