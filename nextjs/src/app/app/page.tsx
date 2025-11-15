@@ -1,15 +1,15 @@
-// src/app/app/page.tsx
+// src/app/app/page.tsx - AŽURIRANA VERZIJA
 "use client";
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useGlobal } from '@/lib/context/GlobalContext';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { CalendarDays, Settings, ExternalLink, CreditCard, User, AlertCircle, CheckCircle2, Shield, RotateCcw, FileText, ExternalLinkIcon, Loader2, ArrowLeft } from 'lucide-react';
+import { CalendarDays, Hand, Settings, ExternalLink, CreditCard, User, AlertCircle, CheckCircle2, RotateCcw, FileText, ExternalLinkIcon, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import CustomerPortalLink from '@/components/CustomerPortalButton'; // 👈 DODAJ OVO
 
 export default function DashboardContent() {
   const { loading, user, customer, subscription, transactions, isSubscribed, isTrialActive, hasCustomerProfile } = useGlobal();
-  const [portalLoading, setPortalLoading] = useState(false);
   const router = useRouter();
 
   const getDaysSinceRegistration = useCallback(() => {
@@ -43,40 +43,6 @@ export default function DashboardContent() {
       currency: currency || 'USD',
     }).format(amount / 100);
   }, []);
-
-  const openCustomerPortal = useCallback(async () => {
-    if (!customer?.customer_id) return;
-
-    setPortalLoading(true);
-    try {
-      const response = await fetch('/customer-portal', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customer_id: customer.customer_id
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create portal session');
-      }
-
-      const data = await response.json();
-      
-      if (data.link) {
-        window.location.href = data.link;
-      } else {
-        throw new Error('No portal link received');
-      }
-    } catch (error) {
-      console.error('Error opening customer portal:', error);
-      alert('Failed to open customer portal. Please try again.');
-    } finally {
-      setPortalLoading(false);
-    }
-  }, [customer?.customer_id]);
 
   const goToHomepage = useCallback(() => {
     router.push('/');
@@ -113,9 +79,10 @@ export default function DashboardContent() {
       {/* Welcome Card */}
       <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
         <CardHeader className="pb-4">
-          <CardTitle className="text-2xl text-gray-900 dark:text-white">
-            Welcome, {user?.email?.split('@')[0]}! 👋
-          </CardTitle>
+         <CardTitle className="text-2xl text-gray-900 dark:text-white flex items-center gap-2">
+  Welcome, {user?.email?.split('@')[0]}!
+  <Hand className="h-6 w-6 text-orange-500 dark:text-yellow-400 inline-block animate-bounce" />
+</CardTitle>
           <CardDescription className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
             <CalendarDays className="h-4 w-4" />
             Member for {daysSinceRegistration} days
@@ -198,24 +165,9 @@ export default function DashboardContent() {
                   </div>
                 )}
 
-                {/* Customer Portal Access */}
-                <button
-                  onClick={openCustomerPortal}
-                  disabled={portalLoading}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-purple-400 disabled:cursor-not-allowed transition-colors font-medium"
-                >
-                  {portalLoading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Opening Portal...
-                    </>
-                  ) : (
-                    <>
-                      <Shield className="h-4 w-4" />
-                      Manage Subscription & Billing
-                    </>
-                  )}
-                </button>
+                {/* Customer Portal Access - NOVA KOMPONENTA 👇 */}
+
+<CustomerPortalLink customerId={customer.customer_id} />
               </>
             ) : (
               <div className="text-center py-6">

@@ -8,6 +8,7 @@ import {
   Globe, 
   Shield, 
   Users, 
+  Play,
   Key, 
   Database, 
   Clock,
@@ -107,13 +108,13 @@ const MobileMenu = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   // Menu items sa ikonicama
   const menuItems = [
     {
-      href: "#features",
+      href: "/#features",
       label: "Features",
       icon: Shield,
       iconColor: "text-green-600"
     },
     {
-      href: "#pricing",
+      href: "/#pricing",
       label: "Pricing",
       icon: Database,
       iconColor: "text-blue-600"
@@ -142,9 +143,13 @@ const MobileMenu = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
         <div className="flex flex-col h-full">
           {/* Header sa theme toggle */}
           <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-800">
-            <span className="text-xl font-bold bg-gradient-to-r from-primary-600 to-primary-500 dark:from-primary-400 dark:to-primary-300 bg-clip-text text-transparent">
+            <Link 
+              href="/" 
+              className="text-xl font-bold bg-gradient-to-r from-primary-600 to-primary-500 dark:from-primary-400 dark:to-primary-300 bg-clip-text text-transparent"
+              onClick={onClose}
+            >
               Menu
-            </span>
+            </Link>
             <div className="flex items-center space-x-2">
               {/* Theme Toggle u mobile menu header */}
               {mounted && (
@@ -312,22 +317,35 @@ const FeaturesSection = () => (
 
 // CTA Section
 const CTASection = () => (
-  <section className="py-16 md:py-20 dark:bg-slate-500 bg-primary-200 dark:bg-primary-200">
+  <section className="py-16 md:py-20 bg-gradient-to-r from-orange-400 to-purple-600 dark:from-slate-800 dark:to-slate-900">
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-      <h2 className="text-2xl md:text-3xl  font-bold text-slate-800">
+      <h2 className="text-2xl md:text-4xl font-bold text-white dark:text-white drop-shadow-sm">
         Ready to Transform Your Idea into Reality?
       </h2>
-      <p className="mt-3 md:mt-4 text-base text-black dark:text-orange-400 md:text-lg  max-w-2xl mx-auto">
-        Join thousands of developers building their SaaS with {productName}
+      <p className="mt-4 md:mt-6 text-lg md:text-xl text-white/90 dark:text-white/80 max-w-2xl mx-auto leading-relaxed">
+        Join thousands of developers building their SaaS with <span className="font-semibold text-white">{productName}</span>
       </p>
-      <Link
-        href="/auth/register"
-        prefetch
-        className="mt-6 md:mt-8 inline-flex items-center px-5 py-3 md:px-6 md:py-3 rounded-lg bg-white text-primary-600 font-semibold hover:bg-primary-50 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-primary-600 text-sm md:text-base"
-      >
-        Get Started Now
-        <ArrowRight className="ml-2 h-4 w-4 md:h-5 md:w-5" />
-      </Link>
+      <div className="mt-8 md:mt-10 flex flex-col sm:flex-row gap-4 justify-center">
+        <Link
+          href="/auth/register"
+          prefetch
+          className="inline-flex items-center justify-center px-8 py-4 rounded-xl bg-white text-slate-900 font-bold hover:bg-gray-100 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-white/30 shadow-lg hover:shadow-xl text-base md:text-lg min-w-[160px]"
+        >
+          Get Started Now
+          <ArrowRight className="ml-3 h-5 w-5" />
+        </Link>
+        <Link
+          href="/demo"
+          prefetch
+          className="inline-flex items-center justify-center px-8 py-4 rounded-xl bg-transparent border-2 border-white text-white font-bold hover:bg-white/10 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-white/30 text-base md:text-lg min-w-[160px]"
+        >
+          Live Demo
+          <Play className="ml-3 h-5 w-5" />
+        </Link>
+      </div>
+      <p className="mt-6 text-sm md:text-base text-white/70 dark:text-white/60">
+        No credit card required • Free 14-day trial
+      </p>
     </div>
   </section>
 );
@@ -341,12 +359,12 @@ const Footer = () => (
           <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Product</h4>
           <ul className="mt-3 space-y-2">
             <li>
-              <Link href="#features" className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors text-sm">
+              <Link href="/#features" className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors text-sm">
                 Features
               </Link>
             </li>
             <li>
-              <Link href="#pricing" className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors text-sm">
+              <Link href="/#pricing" className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors text-sm">
                 Pricing
               </Link>
             </li>
@@ -424,17 +442,20 @@ const Navigation = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-14 sm:h-16 items-center">
             <div className="flex-shrink-0">
-              <span className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent dark:from-primary-400 dark:to-primary-300">
+              <Link 
+                href="/" 
+                className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent dark:from-primary-400 dark:to-primary-300 hover:opacity-80 transition-opacity"
+              >
                 {productName}
-              </span>
+              </Link>
             </div>
             
             {/* Desktop Navigation */}
             <div className="hidden md:flex items-center space-x-4 lg:space-x-6">
-              <Link href="#features" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors font-medium text-sm lg:text-base">
+              <Link href="/#features" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors font-medium text-sm lg:text-base">
                 Features
               </Link>
-              <Link href="#pricing" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors font-medium text-sm lg:text-base">
+              <Link href="/#pricing" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors font-medium text-sm lg:text-base">
                 Pricing
               </Link>
               <Link
