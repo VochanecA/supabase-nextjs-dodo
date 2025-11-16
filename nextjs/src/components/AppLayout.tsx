@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import {usePathname, useRouter} from 'next/navigation';
 import {
@@ -18,6 +18,13 @@ import {
 import { useGlobal } from "@/lib/context/GlobalContext";
 import { createSPASassClient } from "@/lib/supabase/client";
 import { useTheme } from 'next-themes';
+import { encryptObject, type PageData } from '@/lib/utils/encryption';
+
+// Interface za Link href objekat
+interface LinkHref {
+    pathname: string;
+    query: { data: string };
+}
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -27,11 +34,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const { theme, setTheme } = useTheme();
     const [mounted, setMounted] = useState(false);
 
-    const { user } = useGlobal();
+    const { user, subscription, isSubscribed } = useGlobal();
 
     React.useEffect(() => {
         setMounted(true);
     }, []);
+
+    // Funkcija za enkripciju podataka za Example Table
+    const getEncryptedTableParams = useCallback((): string => {
+        const params: PageData = {
+            subscriptionStatus: subscription?.subscription_status || 'none',
+            accountName: user?.email?.split('@')[0] || 'user',
+            isSubscribed: isSubscribed,
+            timestamp: Date.now()
+        };
+        
+        return encryptObject(params);
+    }, [subscription, user, isSubscribed]);
+
+    // Memoizovani enkriptovani parametri
+    const encryptedTableParams = useMemo(() => getEncryptedTableParams(), [getEncryptedTableParams]);
 
     const handleLogout = async () => {
         try {
@@ -59,14 +81,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     const productName = process.env.NEXT_PUBLIC_PRODUCTNAME;
 
+    // Navigation sa enkriptovanim linkom za Example Table
     const navigation = [
         { name: 'Homepage', href: '/app', icon: Home },
         { name: 'Example Storage', href: '/app/storage', icon: Files },
-        { name: 'Example Table', href: '/app/table', icon: LucideListTodo },
+        { 
+            name: 'Example Table', 
+            href: {
+                pathname: '/app/table',
+                query: { data: encryptedTableParams }
+            }, 
+            icon: LucideListTodo 
+        },
         { name: 'User Settings', href: '/app/user-settings', icon: User },
     ];
 
     const toggleSidebar = () => setSidebarOpen(!isSidebarOpen);
+
+    // Helper funkcija za provjeru aktivne rute
+    const isActiveRoute = (href: string | LinkHref): boolean => {
+        const routePath = typeof href === 'string' ? href : href.pathname;
+        return pathname === routePath;
+    };
 
     if (!mounted) {
         return (
@@ -106,7 +142,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {/* Navigation */}
                 <nav className="mt-4 px-2 space-y-1">
                     {navigation.map((item) => {
-                        const isActive = pathname === item.href;
+                        const isActive = isActiveRoute(item.href);
                         return (
                             <Link
                                 key={item.name}

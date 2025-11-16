@@ -4,9 +4,10 @@ import React, { useCallback, useMemo } from 'react';
 import { useGlobal } from '@/lib/context/GlobalContext';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { CalendarDays, Hand, Settings, ExternalLink, CreditCard, User, AlertCircle, CheckCircle2, RotateCcw, FileText, ExternalLinkIcon, ArrowLeft } from 'lucide-react';
+import { CalendarDays, Hand, Settings, ExternalLink, CreditCard, User, AlertCircle, CheckCircle2, RotateCcw, FileText, ExternalLinkIcon, ArrowLeft, Info } from 'lucide-react';
 import Link from 'next/link';
-import CustomerPortalLink from '@/components/CustomerPortalButton'; // 👈 DODAJ OVO
+import CustomerPortalLink from '@/components/CustomerPortalButton';
+import { encryptObject, type PageData } from '@/lib/utils/encryption';
 
 export default function DashboardContent() {
   const { loading, user, customer, subscription, transactions, isSubscribed, isTrialActive, hasCustomerProfile } = useGlobal();
@@ -48,10 +49,28 @@ export default function DashboardContent() {
     router.push('/');
   }, [router]);
 
+  // Funkcija za enkripciju podataka za Example Page
+  const getEncryptedExamplePageParams = useCallback((): string => {
+    const params: PageData = {
+      subscriptionStatus: subscription?.subscription_status || 'none',
+      accountName: user?.email?.split('@')[0] || 'user',
+      isSubscribed: isSubscribed,
+      timestamp: Date.now()
+    };
+    
+    return encryptObject(params);
+  }, [subscription, user, isSubscribed]);
+
+  // Provjera da li korisnik ima aktivnu ili trial subscription
+  const hasActiveOrTrialSubscription = useMemo((): boolean => {
+    return subscription?.subscription_status === 'active' || subscription?.subscription_status === 'trialing';
+  }, [subscription]);
+
   // Memoized computed values
   const daysSinceRegistration = useMemo(() => getDaysSinceRegistration(), [getDaysSinceRegistration]);
   const recentTransactions = useMemo(() => transactions.slice(0, 3), [transactions]);
   const hasTransactions = useMemo(() => transactions.length > 0, [transactions.length]);
+  const encryptedParams = useMemo(() => getEncryptedExamplePageParams(), [getEncryptedExamplePageParams]);
 
   if (loading) {
     return (
@@ -78,15 +97,33 @@ export default function DashboardContent() {
 
       {/* Welcome Card */}
       <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-        <CardHeader className="pb-4">
-         <CardTitle className="text-2xl text-gray-900 dark:text-white flex items-center gap-2">
-  Welcome, {user?.email?.split('@')[0]}!
-  <Hand className="h-6 w-6 text-orange-500 dark:text-yellow-400 inline-block animate-bounce" />
-</CardTitle>
-          <CardDescription className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-            <CalendarDays className="h-4 w-4" />
-            Member for {daysSinceRegistration} days
-          </CardDescription>
+        <CardHeader className="pb-4 flex flex-row items-center justify-between">
+          <div className="flex-1">
+            <CardTitle className="text-2xl text-gray-900 dark:text-white flex items-center gap-2">
+              Welcome, {user?.email?.split('@')[0]}!
+              <Hand className="h-6 w-6 text-orange-500 dark:text-yellow-400 inline-block animate-bounce" />
+            </CardTitle>
+            <CardDescription className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+              <CalendarDays className="h-4 w-4" />
+              Member for {daysSinceRegistration} days
+            </CardDescription>
+          </div>
+          
+          {/* Example Page Button - prikazuje se samo ako korisnik ima aktivnu ili trial subscription */}
+          {hasActiveOrTrialSubscription && (
+            <Link
+              href={{
+                pathname: "/app/table",
+                query: {
+                  data: encryptedParams
+                }
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors shadow-sm hover:shadow-md"
+            >
+              <Info className="h-4 w-4" />
+              <span className="font-medium">Example Page</span>
+            </Link>
+          )}
         </CardHeader>
       </Card>
 
@@ -165,9 +202,7 @@ export default function DashboardContent() {
                   </div>
                 )}
 
-                {/* Customer Portal Access - NOVA KOMPONENTA 👇 */}
-
-<CustomerPortalLink customerId={customer.customer_id} />
+                <CustomerPortalLink customerId={customer.customer_id} />
               </>
             ) : (
               <div className="text-center py-6">
@@ -311,18 +346,26 @@ export default function DashboardContent() {
               </div>
             </Link>
 
-            <Link
-              href="/app/table"
-              className="flex items-center gap-3 p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-gray-200 dark:border-gray-600"
-            >
-              <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-full group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors">
-                <ExternalLink className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-medium truncate text-gray-900 dark:text-white">Example Page</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">Check out features</p>
-              </div>
-            </Link>
+            {/* Example Page Link - prikazuje se samo ako korisnik ima aktivnu ili trial subscription */}
+            {hasActiveOrTrialSubscription && (
+              <Link
+                href={{
+                  pathname: "/app/table",
+                  query: {
+                    data: encryptedParams
+                  }
+                }}
+                className="flex items-center gap-3 p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-gray-200 dark:border-gray-600"
+              >
+                <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-full group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors">
+                  <ExternalLink className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-medium truncate text-gray-900 dark:text-white">Example Page</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate">Check out features</p>
+                </div>
+              </Link>
+            )}
           </div>
         </CardContent>
       </Card>
