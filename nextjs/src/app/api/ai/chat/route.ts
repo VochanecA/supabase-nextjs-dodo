@@ -17,21 +17,104 @@ const config = {
     maxMessages: 20,
     maxMessageLength: 10000,
     maxTokens: 4000,
+    dailyRequestLimit: 45, // Postavljamo na 45 umesto 50 kao buffer
   },
 } as const;
 
-// Free → fallback ordering
-const MODEL_PRIORITY = [
-  'nvidia/nemotron-nano-12b-v2-vl:free',
-  'deepseek/deepseek-chat-v3.1:free',
-  'google/gemini-2.5-flash-lite',
-  'minimax/minimax-m2',
-  'z-ai/glm-4.5-air:free',
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'openrouter/auto',
-] as const;
+// NOVA STRUKTURA: Grupisani modeli po pouzdanosti
+const MODEL_TIERS = {
+  // Tier 1: Najpouzdaniji free modeli (probaj prvo ove)
+  primary: [
+    'deepseek/deepseek-chat-v3.1:free',
+    'meta-llama/llama-3.3-70b-instruct:free',
+  ],
+  // Tier 2: Backup modeli
+  secondary: [
+    'nvidia/nemotron-nano-12b-v2-vl:free',
+    'z-ai/glm-4.5-air:free',
+  ],
+  // Tier 3: Poslednja opcija (mogu biti nestabilni)
+  fallback: [
+    'google/gemini-2.5-flash-lite',
+    'minimax/minimax-m2',
+    'openrouter/auto',
+  ],
+} as const;
 
-type ModelType = typeof MODEL_PRIORITY[number];
+// Type for all available models (extracted from MODEL_TIERS)
+type ModelType = 
+  | typeof MODEL_TIERS.primary[number]
+  | typeof MODEL_TIERS.secondary[number]
+  | typeof MODEL_TIERS.fallback[number];
+
+// --- IN-MEMORY RATE LIMIT TRACKER ---
+// NAPOMENA: Za production, koristite Redis ili bazu
+interface RateLimitInfo {
+  count: number;
+  resetTime: number; // timestamp kada se resetuje
+  failedModels: Set<string>; // modeli koji su failovali danas
+}
+
+const rateLimitStore = new Map<string, RateLimitInfo>();
+
+function getRateLimitKey(): string {
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  return `daily_limit_${today}`;
+}
+
+function checkRateLimit(): { allowed: boolean; remaining: number } {
+  const key = getRateLimitKey();
+  const info = rateLimitStore.get(key);
+  
+  if (!info) {
+    return { allowed: true, remaining: config.limits.dailyRequestLimit };
+  }
+  
+  // Proveri da li je prošao dan (reset)
+  if (Date.now() > info.resetTime) {
+    rateLimitStore.delete(key);
+    return { allowed: true, remaining: config.limits.dailyRequestLimit };
+  }
+  
+  const remaining = config.limits.dailyRequestLimit - info.count;
+  return { 
+    allowed: info.count < config.limits.dailyRequestLimit, 
+    remaining: Math.max(0, remaining)
+  };
+}
+
+function incrementRateLimit(): void {
+  const key = getRateLimitKey();
+  const info = rateLimitStore.get(key);
+  
+  if (!info) {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+    
+    rateLimitStore.set(key, {
+      count: 1,
+      resetTime: tomorrow.getTime(),
+      failedModels: new Set(),
+    });
+  } else {
+    info.count++;
+  }
+}
+
+function markModelAsFailed(model: string): void {
+  const key = getRateLimitKey();
+  const info = rateLimitStore.get(key);
+  if (info) {
+    info.failedModels.add(model);
+  }
+}
+
+function isModelFailed(model: string): boolean {
+  const key = getRateLimitKey();
+  const info = rateLimitStore.get(key);
+  return info?.failedModels.has(model) ?? false;
+}
 
 // --- Validation Schemas ---
 const MessageSchema = z.object({
@@ -56,6 +139,7 @@ interface ChatResponse {
   };
   model_used?: string;
   fallback_used?: boolean;
+  requests_remaining?: number; // Dodato: koliko zahteva je ostalo
 }
 
 interface SubscriptionDebugInfo {
@@ -128,7 +212,7 @@ class ValidationError extends APIError {
 }
 
 class RateLimitError extends APIError {
-  constructor(message: string = "Rate limit exceeded") {
+  constructor(message: string = "Rate limit exceeded", public remaining?: number) {
     super(message, 429, 'RATE_LIMIT_EXCEEDED');
   }
 }
@@ -138,9 +222,9 @@ function cleanResponse(content: string): string {
   if (!content) return "No response generated";
   
   return content
-    .replace(/^[!,.;\s]+/, '') // Remove from start
-    .replace(/[!,.;\s]+$/, '') // Remove from end
-    .replace(/\s+/g, ' ')     // Normalize whitespace
+    .replace(/^[!,.;\s]+/, '')
+    .replace(/[!,.;\s]+$/, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -158,7 +242,6 @@ function enhanceMessages(messages: Array<{ role: 'system' | 'user' | 'assistant'
   return messages;
 }
 
-// Memoized version for performance
 const memoizedEnhanceMessages = (() => {
   const cache = new Map<string, Array<{ role: 'system' | 'user' | 'assistant'; content: string }>>();
   
@@ -176,7 +259,6 @@ const memoizedEnhanceMessages = (() => {
 
 // --- Database Functions ---
 async function hasActiveSubscription(userEmail: string): Promise<boolean> {
-  // Validate input
   if (!userEmail || typeof userEmail !== 'string') {
     return false;
   }
@@ -184,7 +266,6 @@ async function hasActiveSubscription(userEmail: string): Promise<boolean> {
   try {
     const supabase = await createServerAdminClient();
     
-    // Get customer by email
     const { data: customer, error: customerError } = await supabase
       .from("customers")
       .select("customer_id")
@@ -195,7 +276,6 @@ async function hasActiveSubscription(userEmail: string): Promise<boolean> {
       return false;
     }
 
-    // Get subscriptions with optimized query
     const { data: subscriptions, error: subscriptionsError } = await supabase
       .from("subscriptions")
       .select("subscription_status")
@@ -215,9 +295,9 @@ async function hasActiveSubscription(userEmail: string): Promise<boolean> {
 
 async function getSubscriptionDebugInfo(userEmail: string): Promise<SubscriptionDebugInfo> {
   try {
-    const supabase = await createServerAdminClient();
+    const supabase = createServerAdminClient();
     
-    const { data: customer, error: customerError } = await supabase
+    const { data: customer, error: customerError } = await (await supabase)
       .from("customers")
       .select("customer_id")
       .eq("email", userEmail)
@@ -227,7 +307,7 @@ async function getSubscriptionDebugInfo(userEmail: string): Promise<Subscription
       throw new Error('Customer not found');
     }
 
-    const { data: allSubscriptions, error: subscriptionsError } = await supabase
+    const { data: allSubscriptions, error: subscriptionsError } = await (await supabase)
       .from("subscriptions")
       .select("subscription_id, subscription_status, created_at")
       .eq("customer_id", (customer as CustomerRow).customer_id);
@@ -252,12 +332,12 @@ async function getSubscriptionDebugInfo(userEmail: string): Promise<Subscription
   }
 }
 
-// --- OpenRouter API Functions ---
+// --- OPTIMIZOVANA FUNKCIJA SA SMART FALLBACK ---
 async function tryModelsWithFallback(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   temperature: number,
   maxTokens: number,
-  preferredModel?: string
+  preferredModel?: ModelType | string // Sada koristi ModelType za autocomplete
 ): Promise<{
   content: string;
   usage?: {
@@ -268,24 +348,38 @@ async function tryModelsWithFallback(
   model_used: string;
   fallback_used: boolean;
 }> {
-  // Validate API key
   if (!config.openRouter.apiKey) {
     throw new APIError("OpenRouter API key not configured", 500, 'CONFIGURATION_ERROR');
   }
 
-  let modelsToTry: string[] = [...MODEL_PRIORITY];
+  // NOVA LOGIKA: Kreiraj smart listu modela
+  let modelsToTry: string[] = [];
   
-  // Prioritize preferred model if specified and valid
+  // 1. Ako je specificiran preferred model, probaj samo njega
   if (preferredModel) {
-    const isPreferredModelInPriority = MODEL_PRIORITY.includes(preferredModel as ModelType);
-    if (isPreferredModelInPriority) {
-      modelsToTry = [preferredModel, ...MODEL_PRIORITY.filter(m => m !== preferredModel)];
+    modelsToTry = [preferredModel];
+  } else {
+    // 2. Inače, koristi tier sistem
+    // Filtriraj modele koji nisu failovali danas
+    const availablePrimary = MODEL_TIERS.primary.filter(m => !isModelFailed(m));
+    const availableSecondary = MODEL_TIERS.secondary.filter(m => !isModelFailed(m));
+    const availableFallback = MODEL_TIERS.fallback.filter(m => !isModelFailed(m));
+    
+    // Prioritizuj primary modele
+    if (availablePrimary.length > 0) {
+      modelsToTry = [...availablePrimary, ...availableSecondary, ...availableFallback];
+    } else if (availableSecondary.length > 0) {
+      modelsToTry = [...availableSecondary, ...availableFallback];
+    } else if (availableFallback.length > 0) {
+      modelsToTry = availableFallback;
     } else {
-      modelsToTry = [preferredModel, ...MODEL_PRIORITY];
+      // Svi modeli su failovali, resetuj i pokušaj ponovo
+      console.warn("⚠️ All models marked as failed, resetting...");
+      modelsToTry = [...MODEL_TIERS.primary, ...MODEL_TIERS.secondary];
     }
   }
 
-  console.log(`Trying models in order: ${modelsToTry.join(' → ')}`);
+  console.log(`🎯 Trying models: ${modelsToTry.slice(0, 3).join(' → ')}${modelsToTry.length > 3 ? '...' : ''}`);
 
   let lastError: Error | null = null;
 
@@ -294,12 +388,10 @@ async function tryModelsWithFallback(
     const isFallback = Boolean(i > 0 || (preferredModel && model !== preferredModel));
     
     try {
-      console.log(`Attempting with model: ${model}${isFallback ? ' (fallback)' : ''}`);
+      console.log(`🤖 Model: ${model}${isFallback ? ' (fallback)' : ''}`);
       
-      // Enhance messages with memoization
       const enhancedMessages = memoizedEnhanceMessages(messages);
       
-      // Setup timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
@@ -324,14 +416,13 @@ async function tryModelsWithFallback(
 
       if (response.ok) {
         const data = await response.json();
-        console.log(`✅ Success with model: ${model}`);
+        console.log(`✅ Success: ${model}`);
         
         const rawContent = data.choices?.[0]?.message?.content ?? "No response generated";
         const cleanedContent = cleanResponse(rawContent);
         
-        // Log response details for monitoring
-        console.log(`Raw response: "${rawContent}"`);
-        console.log(`Cleaned response: "${cleanedContent}"`);
+        // Increment rate limit samo kada uspe
+        incrementRateLimit();
         
         return {
           content: cleanedContent,
@@ -341,32 +432,31 @@ async function tryModelsWithFallback(
         };
       } else {
         const errorText = await response.text();
-        console.log(`❌ Model ${model} failed: ${response.status} - ${errorText}`);
-        lastError = new Error(`Model ${model} failed: ${response.status} - ${errorText}`);
+        console.log(`❌ ${model} failed: ${response.status}`);
         
-        // Handle rate limits specifically
+        // Označi model kao failed
+        markModelAsFailed(model);
+        
+        lastError = new Error(`${model} failed: ${response.status} - ${errorText}`);
+        
         if (response.status === 429) {
-          throw new RateLimitError(`Rate limit exceeded for model ${model}`);
+          // Rate limit od OpenRouter-a, ne od nas
+          console.warn(`⚠️ ${model} hit OpenRouter rate limit`);
+          continue;
         }
         
-        // Continue with next model for other errors
         continue;
       }
     } catch (error) {
-      console.log(`❌ Model ${model} error:`, error);
+      console.log(`❌ ${model} error:`, error);
       
-      if (error instanceof RateLimitError) {
-        throw error;
-      }
-      
+      markModelAsFailed(model);
       lastError = error instanceof Error ? error : new Error('Unknown error');
       
-      // If last model, throw the error
       if (i === modelsToTry.length - 1) {
         throw lastError;
       }
       
-      // Continue with next model
       continue;
     }
   }
@@ -374,7 +464,7 @@ async function tryModelsWithFallback(
   throw lastError || new APIError("All models failed", 500, 'ALL_MODELS_FAILED');
 }
 
-// --- Request Logging (Stub - implement based on your logging system) ---
+// --- Request Logging ---
 interface RequestLog {
   userId: string;
   endpoint: string;
@@ -387,8 +477,44 @@ interface RequestLog {
 }
 
 async function logRequest(log: RequestLog): Promise<void> {
-  // Implement based on your logging system (Sentry, LogRocket, etc.)
-  console.log('Request logged:', log);
+  console.log('📊 Request logged:', log);
+}
+
+// --- AI Usage Logging (Supabase) ---
+async function logAIUsage(
+  customerId: string,
+  model: string,
+  inputText: string,
+  responseText: string,
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  }
+): Promise<void> {
+  try {
+    const supabase = await createServerAdminClient();
+    
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore - ai_logs table not in generated types yet
+    const { error } = await supabase.from('ai_logs').insert({
+      customer_id: customerId,
+      model,
+      prompt_tokens: usage?.prompt_tokens || 0,
+      completion_tokens: usage?.completion_tokens || 0,
+      total_tokens: usage?.total_tokens || 0,
+      input_text: inputText,
+      response_text: responseText,
+    });
+
+    if (error) {
+      console.error('❌ Failed to log AI usage:', error);
+    } else {
+      console.log('✅ AI usage logged to database');
+    }
+  } catch (error) {
+    console.error('❌ Error logging AI usage:', error);
+  }
 }
 
 // --- Main POST Handler ---
@@ -396,14 +522,25 @@ export async function POST(
   req: NextRequest
 ): Promise<
   NextResponse<
-    ChatResponse | { error: string; debug?: SubscriptionDebugInfo; code?: string }
+    ChatResponse | { error: string; debug?: SubscriptionDebugInfo; code?: string; remaining?: number }
   >
 > {
   const startTime = Date.now();
   let userId: string | undefined;
   
   try {
-    // Validate environment
+    // NOVA PROVJERA: Rate limit na početku
+    const { allowed, remaining } = checkRateLimit();
+    
+    if (!allowed) {
+      throw new RateLimitError(
+        `Daily limit reached (${config.limits.dailyRequestLimit} requests/day). Try again tomorrow.`,
+        remaining
+      );
+    }
+    
+    console.log(`📈 Requests remaining today: ${remaining}`);
+
     if (!config.openRouter.apiKey) {
       throw new APIError("OpenRouter API key not configured", 500, 'CONFIGURATION_ERROR');
     }
@@ -419,7 +556,6 @@ export async function POST(
       throw new AuthenticationError("Invalid token");
     }
 
-    // Verify token and get user
     const supabase = await createServerAdminClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
@@ -433,9 +569,18 @@ export async function POST(
     }
 
     userId = user.id;
-    console.log('✅ Authenticated user:', user.email);
+    console.log('✅ Authenticated:', user.email);
 
-    // --- Subscription Check ---
+    // Get customer_id for logging
+    const { data: customer } = await supabase
+      .from("customers")
+      .select("customer_id")
+      .eq("email", user.email.trim().toLowerCase())
+      .single();
+
+    const customerId = (customer as CustomerRow | null)?.customer_id;
+
+    // Subscription Check
     if (process.env.NODE_ENV !== "development") {
       const subscribed = await hasActiveSubscription(user.email);
       if (!subscribed) {
@@ -443,10 +588,10 @@ export async function POST(
         throw new SubscriptionError("Active subscription required", debugInfo);
       }
     } else {
-      console.log("⚠️ Dev mode: skipping subscription check for:", user.email);
+      console.log("⚠️ Dev mode: skipping subscription check");
     }
 
-    // --- Parse and Validate Request Body ---
+    // Parse and Validate
     let body: unknown;
     try {
       body = await req.json();
@@ -461,7 +606,7 @@ export async function POST(
 
     const { messages, model, temperature, maxTokens } = validationResult.data;
 
-    // --- Call OpenRouter with Fallback ---
+    // Call OpenRouter with Smart Fallback
     const result = await tryModelsWithFallback(
       messages,
       temperature,
@@ -469,7 +614,15 @@ export async function POST(
       model
     );
 
-    // Log successful request
+    // Get updated remaining count
+    const { remaining: updatedRemaining } = checkRateLimit();
+
+    // Log AI usage to database (only if we have customer_id)
+    if (customerId) {
+      const lastUserMessage = messages.filter(m => m.role === 'user').pop()?.content || '';
+      await logAIUsage(customerId, result.model_used, lastUserMessage, result.content, result.usage);
+    }
+
     await logRequest({
       userId: user.id,
       endpoint: '/api/ai/chat',
@@ -485,12 +638,12 @@ export async function POST(
       usage: result.usage,
       model_used: result.model_used,
       fallback_used: result.fallback_used,
+      requests_remaining: updatedRemaining, // Dodato za frontend
     });
 
   } catch (error) {
     const responseTime = Date.now() - startTime;
     
-    // Log error
     await logRequest({
       userId: userId || 'unknown',
       endpoint: '/api/ai/chat',
@@ -500,9 +653,8 @@ export async function POST(
       error: error instanceof Error ? error.message : 'Unknown error',
     });
 
-    console.error("API /api/ai/chat error:", error);
+    console.error("API error:", error);
 
-    // Handle specific error types
     if (error instanceof AuthenticationError) {
       return NextResponse.json(
         { error: error.message, code: error.code },
@@ -531,8 +683,9 @@ export async function POST(
     if (error instanceof RateLimitError) {
       return NextResponse.json(
         { 
-          error: "Rate limit exceeded. Please wait a bit before trying again.",
-          code: error.code 
+          error: error.message,
+          code: error.code,
+          remaining: error.remaining || 0
         },
         { status: error.statusCode }
       );
@@ -545,7 +698,6 @@ export async function POST(
       );
     }
 
-    // Generic error (don't expose internal details)
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -553,7 +705,6 @@ export async function POST(
   }
 }
 
-// Add OPTIONS handler for CORS if needed
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 200,

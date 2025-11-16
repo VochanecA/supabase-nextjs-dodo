@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { AIUsageStatsCard } from '@/components/AIUsageStatsCard';
 import {
     Dialog,
     DialogContent,
@@ -552,31 +553,39 @@ export default function ExamplePage() {
 
     return (
         <div className="space-y-6 p-6">
-            {/* Header sa informacijama o accountu i subscriptionu */}
-            <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
-                <CardContent className="pt-6">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h2 className="text-lg font-semibold text-blue-900 dark:text-blue-100">
-                                Welcome, {finalAccountName}!
-                            </h2>
-                            <p className="text-blue-700 dark:text-blue-300 text-sm">
-                                Subscription Status: <span className="font-medium capitalize">{finalSubscriptionStatus}</span>
-                            </p>
-                            <p className="text-blue-600 dark:text-blue-400 text-sm">
-                                Logged in as: {user?.email || 'Not logged in'}
-                            </p>
+            {/* Header sa informacijama o accountu i subscriptionu - SADA SA DVIJE KARTICE U JEDNOM REDU */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Welcome Card - zauzima 2/3 širine */}
+                <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 lg:col-span-2">
+                    <CardContent className="pt-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h2 className="text-lg font-semibold text-blue-900 dark:text-blue-100">
+                                    Welcome, {finalAccountName}!
+                                </h2>
+                                <p className="text-blue-700 dark:text-blue-300 text-sm">
+                                    Subscription Status: <span className="font-medium capitalize">{finalSubscriptionStatus}</span>
+                                </p>
+                                <p className="text-blue-600 dark:text-blue-400 text-sm">
+                                    Logged in as: {user?.email || 'Not logged in'}
+                                </p>
+                            </div>
+                            <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                                canAccessChat 
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' 
+                                    : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
+                            }`}>
+                                {canAccessChat ? 'Premium Access' : 'Free Tier'}
+                            </div>
                         </div>
-                        <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                            canAccessChat 
-                                ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' 
-                                : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
-                        }`}>
-                            {canAccessChat ? 'Premium Access' : 'Free Tier'}
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
+                    </CardContent>
+                </Card>
+
+                {/* AI Usage Stats Card - zauzima 1/3 širine */}
+                <div className="lg:col-span-1">
+                    <AIUsageStatsCard />
+                </div>
+            </div>
 
             {/* Main Content - samo AI Chat */}
             {canAccessChat ? (
