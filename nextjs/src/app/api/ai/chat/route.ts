@@ -1,22 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerAdminClient } from '@/lib/supabase/serverAdminClient';
-import { config } from 'dotenv';
-import { resolve } from 'path';
+import { z } from 'zod';
 
-// Učitaj .env.local iz roditeljskog direktorijuma
-config({ path: resolve(process.cwd(), '..', '.env.local') });
+// --- Constants & Configuration ---
+const DEFAULT_TEMPERATURE = 0.7;
+const DEFAULT_MAX_TOKENS = 1000;
+const REQUEST_TIMEOUT = 30000; // 30 seconds
+
+const config = {
+  openRouter: {
+    apiKey: process.env.OPENROUTER_API_KEY,
+    baseUrl: 'https://openrouter.ai/api/v1/chat/completions' as const,
+    referer: process.env.NEXT_PUBLIC_APP_URL || 'https://yourapp.vercel.app',
+  },
+  limits: {
+    maxMessages: 20,
+    maxMessageLength: 10000,
+    maxTokens: 4000,
+  },
+} as const;
+
+// Free → fallback ordering
+const MODEL_PRIORITY = [
+  'nvidia/nemotron-nano-12b-v2-vl:free',
+  'deepseek/deepseek-chat-v3.1:free',
+  'google/gemini-2.5-flash-lite',
+  'minimax/minimax-m2',
+  'z-ai/glm-4.5-air:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'openrouter/auto',
+] as const;
+
+type ModelType = typeof MODEL_PRIORITY[number];
+
+// --- Validation Schemas ---
+const MessageSchema = z.object({
+  role: z.enum(['system', 'user', 'assistant']),
+  content: z.string().min(1).max(config.limits.maxMessageLength),
+});
+
+const ChatRequestSchema = z.object({
+  messages: z.array(MessageSchema).min(1).max(config.limits.maxMessages),
+  model: z.string().optional(),
+  temperature: z.number().min(0).max(2).optional().default(DEFAULT_TEMPERATURE),
+  maxTokens: z.number().min(1).max(config.limits.maxTokens).optional().default(DEFAULT_MAX_TOKENS),
+});
 
 // --- Interfaces ---
-interface ChatRequest {
-  messages: Array<{
-    role: 'system' | 'user' | 'assistant';
-    content: string;
-  }>;
-  model?: string;
-  temperature?: number;
-  maxTokens?: number;
-}
-
 interface ChatResponse {
   content: string;
   usage?: {
@@ -64,31 +94,57 @@ interface SubscriptionRow {
   updated_at: string;
 }
 
-// Free → fallback ordering
-const MODEL_PRIORITY = [
-  'nvidia/nemotron-nano-12b-v2-vl:free',
-  'deepseek/deepseek-chat-v3.1:free',
-  'google/gemini-2.5-flash-lite',
-  'minimax/minimax-m2',
-  'z-ai/glm-4.5-air:free',
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'openrouter/auto',
-];
+// --- Custom Error Classes ---
+class APIError extends Error {
+  constructor(
+    message: string,
+    public statusCode: number,
+    public code?: string
+  ) {
+    super(message);
+    this.name = 'APIError';
+  }
+}
 
-// --- Clean response function ---
+class AuthenticationError extends APIError {
+  constructor(message: string = "Authentication failed") {
+    super(message, 401, 'AUTH_ERROR');
+  }
+}
+
+class SubscriptionError extends APIError {
+  constructor(
+    message: string = "Subscription required",
+    public debug?: SubscriptionDebugInfo
+  ) {
+    super(message, 403, 'SUBSCRIPTION_REQUIRED');
+  }
+}
+
+class ValidationError extends APIError {
+  constructor(message: string = "Invalid request") {
+    super(message, 400, 'VALIDATION_ERROR');
+  }
+}
+
+class RateLimitError extends APIError {
+  constructor(message: string = "Rate limit exceeded") {
+    super(message, 429, 'RATE_LIMIT_EXCEEDED');
+  }
+}
+
+// --- Utility Functions ---
 function cleanResponse(content: string): string {
   if (!content) return "No response generated";
   
   return content
-    .replace(/^[!,.;\s]+/, '') // Ukloni sa početka
-    .replace(/[!,.;\s]+$/, '') // Ukloni sa kraja
-    .replace(/\s+/g, ' ') // Normalizuj razmake
+    .replace(/^[!,.;\s]+/, '') // Remove from start
+    .replace(/[!,.;\s]+$/, '') // Remove from end
+    .replace(/\s+/g, ' ')     // Normalize whitespace
     .trim();
 }
 
-// --- Enhance messages function ---
 function enhanceMessages(messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>) {
-  // Dodaj system prompt ako već ne postoji
   const hasSystemMessage = messages.some(msg => msg.role === 'system');
   
   if (!hasSystemMessage) {
@@ -102,44 +158,101 @@ function enhanceMessages(messages: Array<{ role: 'system' | 'user' | 'assistant'
   return messages;
 }
 
-// --- Check active subscription ---
+// Memoized version for performance
+const memoizedEnhanceMessages = (() => {
+  const cache = new Map<string, Array<{ role: 'system' | 'user' | 'assistant'; content: string }>>();
+  
+  return (messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>) => {
+    const key = JSON.stringify(messages);
+    if (cache.has(key)) {
+      return cache.get(key)!;
+    }
+    
+    const enhanced = enhanceMessages(messages);
+    cache.set(key, enhanced);
+    return enhanced;
+  };
+})();
+
+// --- Database Functions ---
 async function hasActiveSubscription(userEmail: string): Promise<boolean> {
+  // Validate input
+  if (!userEmail || typeof userEmail !== 'string') {
+    return false;
+  }
+
   try {
     const supabase = await createServerAdminClient();
     
-    if (!userEmail) return false;
-
     // Get customer by email
+    const { data: customer, error: customerError } = await supabase
+      .from("customers")
+      .select("customer_id")
+      .eq("email", userEmail.trim().toLowerCase())
+      .single();
+
+    if (customerError || !customer) {
+      return false;
+    }
+
+    // Get subscriptions with optimized query
+    const { data: subscriptions, error: subscriptionsError } = await supabase
+      .from("subscriptions")
+      .select("subscription_status")
+      .eq("customer_id", (customer as CustomerRow).customer_id)
+      .in("subscription_status", ["active", "trialing"]);
+
+    if (subscriptionsError || !subscriptions) {
+      return false;
+    }
+
+    return subscriptions.length > 0;
+  } catch (error) {
+    console.error("Subscription check failed:", error);
+    return false;
+  }
+}
+
+async function getSubscriptionDebugInfo(userEmail: string): Promise<SubscriptionDebugInfo> {
+  try {
+    const supabase = await createServerAdminClient();
+    
     const { data: customer, error: customerError } = await supabase
       .from("customers")
       .select("customer_id")
       .eq("email", userEmail)
       .single();
 
-    if (customerError || !customer) return false;
+    if (customerError || !customer) {
+      throw new Error('Customer not found');
+    }
 
-    // Get subscriptions
-    const { data: subscriptions, error: subscriptionsError } = await supabase
+    const { data: allSubscriptions, error: subscriptionsError } = await supabase
       .from("subscriptions")
-      .select("*")
+      .select("subscription_id, subscription_status, created_at")
       .eq("customer_id", (customer as CustomerRow).customer_id);
 
-    if (subscriptionsError || !subscriptions) return false;
+    if (subscriptionsError) {
+      throw new Error('Failed to fetch subscriptions');
+    }
 
-    const activeSubscriptions = (subscriptions as SubscriptionRow[]).filter(
-      (sub: SubscriptionRow) =>
-        sub.subscription_status === "active" ||
-        sub.subscription_status === "trialing"
-    );
-
-    return activeSubscriptions.length > 0;
-  } catch (err) {
-    console.error("Subscription check failed:", err);
-    return false;
+    return {
+      userEmail,
+      customerId: (customer as CustomerRow).customer_id,
+      subscriptionsFound: (allSubscriptions as SubscriptionRow[])?.length ?? 0,
+      subscriptions: (allSubscriptions as SubscriptionRow[])?.map((sub: SubscriptionRow) => ({
+        subscription_id: sub.subscription_id,
+        subscription_status: sub.subscription_status,
+        created_at: sub.created_at
+      })),
+    };
+  } catch (error) {
+    console.error("Debug info collection failed:", error);
+    throw error;
   }
 }
 
-// --- Try models in priority order ---
+// --- OpenRouter API Functions ---
 async function tryModelsWithFallback(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   temperature: number,
@@ -155,14 +268,21 @@ async function tryModelsWithFallback(
   model_used: string;
   fallback_used: boolean;
 }> {
-  let modelsToTry = MODEL_PRIORITY;
+  // Validate API key
+  if (!config.openRouter.apiKey) {
+    throw new APIError("OpenRouter API key not configured", 500, 'CONFIGURATION_ERROR');
+  }
+
+  let modelsToTry: string[] = [...MODEL_PRIORITY];
   
-  // Ako je specificiran preferred model, stavite ga na prvo mesto
-  if (preferredModel && MODEL_PRIORITY.includes(preferredModel)) {
-    modelsToTry = [preferredModel, ...MODEL_PRIORITY.filter(m => m !== preferredModel)];
-  } else if (preferredModel) {
-    // Ako preferred model nije u listi, dodajte ga na početak
-    modelsToTry = [preferredModel, ...MODEL_PRIORITY];
+  // Prioritize preferred model if specified and valid
+  if (preferredModel) {
+    const isPreferredModelInPriority = MODEL_PRIORITY.includes(preferredModel as ModelType);
+    if (isPreferredModelInPriority) {
+      modelsToTry = [preferredModel, ...MODEL_PRIORITY.filter(m => m !== preferredModel)];
+    } else {
+      modelsToTry = [preferredModel, ...MODEL_PRIORITY];
+    }
   }
 
   console.log(`Trying models in order: ${modelsToTry.join(' → ')}`);
@@ -176,28 +296,31 @@ async function tryModelsWithFallback(
     try {
       console.log(`Attempting with model: ${model}${isFallback ? ' (fallback)' : ''}`);
       
-      // Poboljšaj poruke pre slanja
-      const enhancedMessages = enhanceMessages(messages);
+      // Enhance messages with memoization
+      const enhancedMessages = memoizedEnhanceMessages(messages);
       
-      const response = await fetch(
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer":
-              process.env.NEXT_PUBLIC_APP_URL ?? "https://yourapp.vercel.app",
-            "X-Title": "AI Service",
-          },
-          body: JSON.stringify({
-            model: model,
-            messages: enhancedMessages,
-            max_tokens: maxTokens,
-            temperature: temperature,
-          }),
-        }
-      );
+      // Setup timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+      const response = await fetch(config.openRouter.baseUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.openRouter.apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": config.openRouter.referer,
+          "X-Title": "AI Service",
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: enhancedMessages,
+          max_tokens: maxTokens,
+          temperature: temperature,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
 
       if (response.ok) {
         const data = await response.json();
@@ -206,6 +329,7 @@ async function tryModelsWithFallback(
         const rawContent = data.choices?.[0]?.message?.content ?? "No response generated";
         const cleanedContent = cleanResponse(rawContent);
         
+        // Log response details for monitoring
         console.log(`Raw response: "${rawContent}"`);
         console.log(`Cleaned response: "${cleanedContent}"`);
         
@@ -220,46 +344,80 @@ async function tryModelsWithFallback(
         console.log(`❌ Model ${model} failed: ${response.status} - ${errorText}`);
         lastError = new Error(`Model ${model} failed: ${response.status} - ${errorText}`);
         
-        // Ako nije rate limit, nastavite sa sledećim modelom
-        if (response.status !== 429) {
-          continue;
-        } else {
-          // Za rate limit, bacite grešku odmah
-          throw new Error(`Rate limit exceeded for model ${model}`);
+        // Handle rate limits specifically
+        if (response.status === 429) {
+          throw new RateLimitError(`Rate limit exceeded for model ${model}`);
         }
+        
+        // Continue with next model for other errors
+        continue;
       }
     } catch (error) {
       console.log(`❌ Model ${model} error:`, error);
+      
+      if (error instanceof RateLimitError) {
+        throw error;
+      }
+      
       lastError = error instanceof Error ? error : new Error('Unknown error');
       
-      // Ako je poslednji model u listi, baci grešku
+      // If last model, throw the error
       if (i === modelsToTry.length - 1) {
         throw lastError;
       }
-      // Inače, nastavi sa sledećim modelom
+      
+      // Continue with next model
       continue;
     }
   }
 
-  throw lastError || new Error("All models failed");
+  throw lastError || new APIError("All models failed", 500, 'ALL_MODELS_FAILED');
 }
 
-// --- POST Handler ---
+// --- Request Logging (Stub - implement based on your logging system) ---
+interface RequestLog {
+  userId: string;
+  endpoint: string;
+  timestamp: string;
+  modelUsed?: string;
+  fallbackUsed?: boolean;
+  responseTime: number;
+  status: number;
+  error?: string;
+}
+
+async function logRequest(log: RequestLog): Promise<void> {
+  // Implement based on your logging system (Sentry, LogRocket, etc.)
+  console.log('Request logged:', log);
+}
+
+// --- Main POST Handler ---
 export async function POST(
   req: NextRequest
 ): Promise<
   NextResponse<
-    ChatResponse | { error: string; debug?: SubscriptionDebugInfo }
+    ChatResponse | { error: string; debug?: SubscriptionDebugInfo; code?: string }
   >
 > {
+  const startTime = Date.now();
+  let userId: string | undefined;
+  
   try {
-    // Get authorization header
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Validate environment
+    if (!config.openRouter.apiKey) {
+      throw new APIError("OpenRouter API key not configured", 500, 'CONFIGURATION_ERROR');
     }
 
-    const token = authHeader.slice(7); // Remove "Bearer " prefix
+    // Authentication
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      throw new AuthenticationError("Missing or invalid authorization header");
+    }
+
+    const token = authHeader.slice(7);
+    if (!token) {
+      throw new AuthenticationError("Invalid token");
+    }
 
     // Verify token and get user
     const supabase = await createServerAdminClient();
@@ -267,96 +425,60 @@ export async function POST(
 
     if (authError || !user || !user.email) {
       console.log('Auth error details:', {
-        authError,
-        user: user ? { email: user.email, id: user.id } : 'no user',
+        authError: authError?.message,
+        userExists: !!user,
         tokenPresent: !!token
       });
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      throw new AuthenticationError("Invalid authentication token");
     }
 
+    userId = user.id;
     console.log('✅ Authenticated user:', user.email);
 
     // --- Subscription Check ---
     if (process.env.NODE_ENV !== "development") {
       const subscribed = await hasActiveSubscription(user.email);
       if (!subscribed) {
-        try {
-          // Get customer data
-          const { data: customer, error: customerError } = await supabase
-            .from("customers")
-            .select("customer_id")
-            .eq("email", user.email)
-            .single();
-
-          if (customerError) {
-            console.log('Customer error:', customerError);
-            throw new Error('Failed to fetch customer data');
-          }
-
-          const { data: allSubscriptions, error: subscriptionsError } = await supabase
-            .from("subscriptions")
-            .select("subscription_id, subscription_status, created_at")
-            .eq("customer_id", (customer as CustomerRow)?.customer_id ?? "");
-
-          if (subscriptionsError) {
-            console.log('Subscriptions error:', subscriptionsError);
-            throw new Error('Failed to fetch subscriptions');
-          }
-
-          const debugInfo: SubscriptionDebugInfo = {
-            userEmail: user.email,
-            customerId: (customer as CustomerRow)?.customer_id,
-            subscriptionsFound: (allSubscriptions as SubscriptionRow[])?.length ?? 0,
-            subscriptions: (allSubscriptions as SubscriptionRow[])?.map((sub: SubscriptionRow) => ({
-              subscription_id: sub.subscription_id,
-              subscription_status: sub.subscription_status,
-              created_at: sub.created_at
-            })),
-          };
-
-          return NextResponse.json(
-            { error: "Subscription required", debug: debugInfo },
-            { status: 403 }
-          );
-        } catch (debugError) {
-          console.error("Debug info collection failed:", debugError);
-          return NextResponse.json(
-            { error: "Subscription required" },
-            { status: 403 }
-          );
-        }
+        const debugInfo = await getSubscriptionDebugInfo(user.email);
+        throw new SubscriptionError("Active subscription required", debugInfo);
       }
     } else {
       console.log("⚠️ Dev mode: skipping subscription check for:", user.email);
     }
 
-    // --- Parse body ---
-    const body: ChatRequest = await req.json();
-    const { messages, model, temperature, maxTokens } = body;
-
-    if (!messages || messages.length === 0) {
-      return NextResponse.json(
-        { error: "No messages provided" },
-        { status: 400 }
-      );
+    // --- Parse and Validate Request Body ---
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      throw new ValidationError("Invalid JSON in request body");
     }
 
-    if (!process.env.OPENROUTER_API_KEY) {
-      return NextResponse.json(
-        {
-          error: "Server is not configured with an OpenRouter API key.",
-        },
-        { status: 500 }
-      );
+    const validationResult = ChatRequestSchema.safeParse(body);
+    if (!validationResult.success) {
+      throw new ValidationError(`Invalid request: ${validationResult.error.issues[0]?.message}`);
     }
 
-    // --- Call OpenRouter with fallback ---
+    const { messages, model, temperature, maxTokens } = validationResult.data;
+
+    // --- Call OpenRouter with Fallback ---
     const result = await tryModelsWithFallback(
       messages,
-      temperature ?? 0.7,
-      maxTokens ?? 1000,
-      model // preferred model from frontend
+      temperature,
+      maxTokens,
+      model
     );
+
+    // Log successful request
+    await logRequest({
+      userId: user.id,
+      endpoint: '/api/ai/chat',
+      timestamp: new Date().toISOString(),
+      modelUsed: result.model_used,
+      fallbackUsed: result.fallback_used,
+      responseTime: Date.now() - startTime,
+      status: 200,
+    });
 
     return NextResponse.json({
       content: result.content,
@@ -364,21 +486,81 @@ export async function POST(
       model_used: result.model_used,
       fallback_used: result.fallback_used,
     });
+
   } catch (error) {
-    console.error("API /api/ai/chat error:", error);
+    const responseTime = Date.now() - startTime;
     
-    if (error instanceof Error && error.message.includes('Rate limit')) {
+    // Log error
+    await logRequest({
+      userId: userId || 'unknown',
+      endpoint: '/api/ai/chat',
+      timestamp: new Date().toISOString(),
+      responseTime,
+      status: error instanceof APIError ? error.statusCode : 500,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+
+    console.error("API /api/ai/chat error:", error);
+
+    // Handle specific error types
+    if (error instanceof AuthenticationError) {
       return NextResponse.json(
-        {
-          error: "Rate limit exceeded. Please wait a bit before trying again.",
-        },
-        { status: 429 }
+        { error: error.message, code: error.code },
+        { status: error.statusCode }
       );
     }
-    
+
+    if (error instanceof SubscriptionError) {
+      return NextResponse.json(
+        { 
+          error: error.message, 
+          debug: error.debug,
+          code: error.code 
+        },
+        { status: error.statusCode }
+      );
+    }
+
+    if (error instanceof ValidationError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
+
+    if (error instanceof RateLimitError) {
+      return NextResponse.json(
+        { 
+          error: "Rate limit exceeded. Please wait a bit before trying again.",
+          code: error.code 
+        },
+        { status: error.statusCode }
+      );
+    }
+
+    if (error instanceof APIError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
+
+    // Generic error (don't expose internal details)
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
     );
   }
+}
+
+// Add OPTIONS handler for CORS if needed
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  });
 }
