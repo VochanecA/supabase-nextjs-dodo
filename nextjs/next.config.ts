@@ -25,20 +25,11 @@
 
 // export default nextConfig;
 
-
 import type { NextConfig } from "next";
 import { createHash } from "crypto";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  
-  // IMPORTANT: Re-enable TypeScript and ESLint for production!
-  // typescript: {
-  //   ignoreBuildErrors: false,
-  // },
-  // eslint: {
-  //   ignoreDuringBuilds: false,
-  // },
   
   // For now, keep them disabled if you have errors
   typescript: {
@@ -47,9 +38,6 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-
-  // Modern JavaScript compilation
-  swcMinify: true,
 
   // Compiler optimizations
   compiler: {
@@ -85,12 +73,10 @@ const nextConfig: NextConfig = {
       {
         source: '/:path*',
         headers: [
-          // DNS Prefetch
           {
             key: 'X-DNS-Prefetch-Control',
             value: 'on'
           },
-          // Security headers
           {
             key: 'Strict-Transport-Security',
             value: 'max-age=63072000; includeSubDomains; preload'
@@ -117,7 +103,6 @@ const nextConfig: NextConfig = {
           },
         ],
       },
-      // Cache static assets aggressively
       {
         source: '/fonts/:path*',
         headers: [
@@ -137,7 +122,7 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        source: '/icon-:size*.png',
+        source: '/icon-192x192.png',
         headers: [
           {
             key: 'Cache-Control',
@@ -146,7 +131,7 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        source: '/:path*.webp',
+        source: '/icon-512x512.png',
         headers: [
           {
             key: 'Cache-Control',
@@ -168,14 +153,12 @@ const nextConfig: NextConfig = {
           cacheGroups: {
             default: false,
             vendors: false,
-            // Common chunks used across multiple pages
             commons: {
               name: 'commons',
               chunks: 'all',
               minChunks: 2,
               priority: 10,
             },
-            // Large libraries
             lib: {
               test(module: { size?: () => number }) {
                 return typeof module.size === 'function' && module.size() > 160000;
@@ -192,7 +175,6 @@ const nextConfig: NextConfig = {
               minChunks: 1,
               reuseExistingChunk: true,
             },
-            // React and related libraries
             react: {
               test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
               name: 'react',
@@ -204,33 +186,12 @@ const nextConfig: NextConfig = {
       };
     }
 
-    // Ignore source map warnings from third-party packages
     config.ignoreWarnings = [
       { module: /node_modules/ },
       /Failed to parse source map/,
     ];
 
     return config;
-  },
-
-  // Redirects for better SEO
-  async redirects() {
-    return [
-      // Example: redirect www to non-www
-      // {
-      //   source: '/:path*',
-      //   has: [{ type: 'host', value: 'www.yourdomain.com' }],
-      //   destination: 'https://yourdomain.com/:path*',
-      //   permanent: true,
-      // },
-    ];
-  },
-
-  // Rewrites for cleaner URLs if needed
-  async rewrites() {
-    return [
-      // Example rewrites
-    ];
   },
 };
 
