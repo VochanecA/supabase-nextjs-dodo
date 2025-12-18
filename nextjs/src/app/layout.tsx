@@ -1,23 +1,19 @@
+// app/layout.tsx - LIGHTHOUSE OPTIMIZED
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { Analytics } from '@vercel/analytics/next';
 import CookieConsent from "@/components/Cookies";
 import { GlobalProvider } from '@/lib/context/GlobalContext';
 import { ThemeProvider } from 'next-themes';
 
+// OPTIMIZED: Only load Inter, remove JetBrains Mono if not needed
 const inter = Inter({
   subsets: ['latin'],
   display: 'swap',
   variable: '--font-inter',
   preload: true,
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--font-jetbrains-mono',
-  preload: false,
+  fallback: ['system-ui', 'arial'],
 });
 
 const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCTNAME || "Your Best SaaS";
@@ -45,20 +41,25 @@ export const metadata: Metadata = {
     description: HOMEPAGE_DESCRIPTION,
     images: ['/og-image.jpg'],
   },
-  robots: { index: true, follow: true, googleBot: { index: true, follow: true } },
+  robots: { index: true, follow: true, googleBot: { index: true, follow: true, 'max-image-preview': 'large' } },
   alternates: { canonical: BASE_URL },
   category: 'technology',
   manifest: '/manifest.json',
   appleWebApp: { capable: true, statusBarStyle: 'default', title: PRODUCT_NAME },
+  verification: {
+    // Add your verification tokens here
+    // google: 'your-google-site-verification',
+  },
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-  themeColor: '#4f46e5',
-  colorScheme: 'light dark',
+  maximumScale: 5, // Changed from 1 to improve accessibility
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#4f46e5' },
+    { media: '(prefers-color-scheme: dark)', color: '#1f2937' }
+  ],
 };
 
 const structuredData = {
@@ -70,7 +71,11 @@ const structuredData = {
   description: HOMEPAGE_DESCRIPTION,
   url: BASE_URL,
   author: { '@type': 'Organization', name: PRODUCT_NAME, url: BASE_URL },
-  publisher: { '@type': 'Organization', name: PRODUCT_NAME, logo: { '@type': 'ImageObject', url: `${BASE_URL}/logo.png` } },
+  publisher: { 
+    '@type': 'Organization', 
+    name: PRODUCT_NAME, 
+    logo: { '@type': 'ImageObject', url: `${BASE_URL}/logo.png` } 
+  },
   aggregateRating: { '@type': 'AggregateRating', ratingValue: '4.8', ratingCount: '1000' },
   offers: { '@type': 'AggregateOffer', lowPrice: '0', highPrice: '199', priceCurrency: 'USD', offerCount: '3' }
 };
@@ -79,21 +84,26 @@ interface RootLayoutProps { children: React.ReactNode; }
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} ${THEME}`} suppressHydrationWarning>
+    <html lang="en" className={`${inter.variable} ${THEME}`} suppressHydrationWarning>
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link rel="preconnect" href="https://vercel.live" />
-        <link rel="icon" href="/favicon.ico" sizes="any" />
+        {/* REMOVED: Unnecessary preconnects that were causing warnings */}
+        {/* Only keep preconnects for resources you ACTUALLY use */}
+        <link rel="icon" href="/favicon.ico" sizes="32x32" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        <link rel="manifest" href="/manifest.json" />
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
-        <meta name="theme-color" content="#4f46e5" media="(prefers-color-scheme: light)" />
-        <meta name="theme-color" content="#1f2937" media="(prefers-color-scheme: dark)" />
+        <script 
+          type="application/ld+json" 
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} 
+        />
       </head>
-      <body className="font-sans antialiased min-h-screen">
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+      <body className="font-sans antialiased min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+        <ThemeProvider 
+          attribute="class" 
+          defaultTheme="system" 
+          enableSystem 
+          disableTransitionOnChange
+          storageKey="theme"
+        >
           <GlobalProvider>
             {children}
             <Analytics />

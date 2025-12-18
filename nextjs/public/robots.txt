@@ -1,0 +1,19 @@
+# Allow all crawlers
+User-agent: *
+Allow: /
+
+# Disallow admin and API routes
+Disallow: /api/
+Disallow: /admin/
+Disallow: /_next/
+Disallow: /auth/
+
+# Allow important pages
+Allow: /auth/login
+Allow: /auth/register
+
+# Sitemap
+Sitemap: https://yoursaas.com/sitemap.xml
+
+# Crawl delay (optional, helps with server load)
+Crawl-delay: 1
